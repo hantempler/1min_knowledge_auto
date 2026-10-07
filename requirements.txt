@@ -1,0 +1,8 @@
+requests
+beautifulsoup4
+google-genai
+google-cloud-texttospeech
+google-api-python-client
+moviepy==1.0.3
+Pillow<10.0.0
+python-dotenv
