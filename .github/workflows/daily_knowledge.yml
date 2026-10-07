@@ -2,8 +2,6 @@ name: 1Min Knowledge Generator
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '0 10 * * *'  # 한국 시간(KST) 기준 19:00
   repository_dispatch:
     types: [trigger-1min-knowledge]
 
