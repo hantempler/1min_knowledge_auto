@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import requests
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
@@ -326,7 +327,7 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
         if bgm_path and os.path.exists(bgm_path):
             bgm_clip = AudioFileClip(bgm_path)
             bgm_clip = audio_loop(bgm_clip, duration=final_audio.duration)
-            bgm_clip = bgm_clip.volumex(0.08)
+            bgm_clip = bgm_clip.volumex(0.18)
             bgm_clip = audio_fadeout(bgm_clip, min(2.0, final_audio.duration))
             final_audio = CompositeAudioClip([final_audio, bgm_clip])
             
@@ -338,7 +339,23 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
         # 1. 인트로 (표지) 컷 추가 (3초)
         print("  -> 인트로 컷 렌더링 중...")
         cover_title = script_data.get("cover_title", "오늘의 1분 상식")
-        cover_photo = get_pexels_photo(topic_str, daily_dir, photo_index=0, filename="cover_topic.jpg")
+        sections_for_cover = script_data.get("script_sections", [])
+        cover_keyword = (
+            script_data.get("cover_keyword")
+            or (sections_for_cover[0].get("bg_keyword") if sections_for_cover else "")
+            or topic_str
+        )
+        cover_photo = get_pexels_photo(cover_keyword, daily_dir, photo_index=0, filename="cover_topic.jpg")
+
+        # 주제 선정 배경(왜 이 주제인지)을 인트로 하단에 표시한다.
+        news_context = ""
+        try:
+            with open(os.path.join(daily_dir, "0_topic_selection.json"), "r", encoding="utf-8") as f:
+                news_context = json.load(f).get("why_today", "") or ""
+        except Exception:
+            pass
+        if len(news_context) > 80:
+            news_context = news_context[:80].rstrip() + "…"
         
         # 바탕화면에 텍스트 오버레이용 배경 하나 만들기
         bg_png = os.path.join(temp_dir, "intro_overlay.png")
@@ -377,6 +394,14 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
         
         topic_bbox = c_draw.multiline_textbbox((0, 0), topic_str, font=font58, spacing=10)
         c_draw.multiline_text(((1080 - (topic_bbox[2] - topic_bbox[0])) / 2, 225), topic_str, font=font58, fill='#FFD700', align='center', spacing=10, stroke_width=3, stroke_fill='black')
+
+        if news_context:
+            font36 = ImageFont.truetype(font_path, 36)
+            news_wrapped = wrap_text(news_context, font36, max_width=940)
+            news_lines = news_wrapped.split("\n")[:2]
+            news_text = "\n".join(news_lines)
+            n_bbox = c_draw.multiline_textbbox((0, 0), news_text, font=font36, spacing=8)
+            c_draw.multiline_text(((1080 - (n_bbox[2] - n_bbox[0])) / 2, 1560), news_text, font=font36, fill=(255, 255, 255, 230), align='center', spacing=8, stroke_width=2, stroke_fill='black')
         c_img.save(bg_png)
         
         intro_ts = os.path.join(temp_dir, "chunk_intro.ts")
@@ -457,7 +482,13 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
             original_cover = script_data.get("cover_title", "오늘의 1분 상식")
             summary_text = f"오늘의 상식\n[{original_cover}]\n" + "\n".join(summary_lines)
             summary_png_path = create_pil_text_clip(summary_text, font_path, 50, temp_dir, "summary")
-            summary_photo = get_pexels_photo(topic_str, daily_dir, photo_index=1, filename="summary_topic.jpg")
+            sections_for_summary = script_data.get("script_sections", [])
+            summary_keyword = (
+                script_data.get("summary_keyword")
+                or (sections_for_summary[-1].get("bg_keyword") if sections_for_summary else "")
+                or topic_str
+            )
+            summary_photo = get_pexels_photo(summary_keyword, daily_dir, photo_index=1, filename="summary_topic.jpg")
             
             s_overlay = os.path.join(temp_dir, "summary_overlay.png")
             s_img = Image.open(summary_png_path)

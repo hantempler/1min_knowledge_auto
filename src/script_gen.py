@@ -61,6 +61,8 @@ def generate_script(topic: str, daily_dir: str = None, research_brief: dict = No
 5. `summary_3_lines`: 대본 내용을 바탕으로 한 핵심 3줄 요약을 문자열 배열로 제공해. 단, '~입니다', '~습니다' 같은 서술어는 절대 쓰지 말고, 간결한 명사형 종결이나 음슴체('~임', '~함', '관측됨' 등)로 핵심만 요약해. 화면에 잘리지 않도록 각 줄은 공백을 포함하여 무조건 30자를 넘지 않게 극도로 짧게 작성해.
 6. `useful_source_title`: 시청자가 이 상식을 더 깊이 알아볼 수 있는 실제 출처. 뉴스가 출처인 경우, 단순히 '네이버 뉴스 헤드라인'이 아니라 실제 '뉴스 기사의 제목'을 작성해. (예: '한국은행 경제용어사전', '구체적인 기사 제목')
 7. `useful_source_url`: 위 소스에 대한 안내나 실제 URL. 뉴스가 출처인 경우, 포털 메인 주소(예: https://news.naver.com)가 아니라 해당 기사의 '실제 구체적인 URL(직접 링크)'을 제공해.
+8. `cover_keyword`: 표지 사진 검색용 영어 키워드 2~4단어. 주제를 상징하는 구체적인 사물이나 장면(예: scales of justice closeup, courthouse exterior). 추상 개념명 금지, 인물 얼굴 클로즈업이 될 만한 표현 금지.
+9. `summary_keyword`: 마무리 요약 화면 사진 검색용 영어 키워드 2~4단어. 8번과 같은 규칙을 따른다.
 
 JSON 포맷 예시:
 {{
@@ -105,6 +107,9 @@ JSON 포맷 예시:
             if not all(section.get(key) for key in ("narration", "caption", "bg_keyword")):
                 raise ValueError("각 대본 구간에 narration, caption, bg_keyword가 필요합니다.")
             section["text"] = section["narration"]
+        for key in ("cover_keyword", "summary_keyword"):
+            if not result.get(key) or not result[key].strip():
+                raise ValueError(f"{key}가 필요합니다.")
         
         # Save JSON script to data dir
         script_path = os.path.join(daily_dir, "3_script.json")
