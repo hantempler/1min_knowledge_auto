@@ -74,12 +74,14 @@ def generate_tts_per_section(script_data: dict, daily_dir: str = None):
     """구간별로 합성해 실제 발화 길이를 측정한다.
 
     (오디오 경로, 구간별 길이(초) 배열)을 반환한다.
+    저장되는 오디오는 순수 내레이션만 담고, 앞뒤 무음(인트로 3초/아웃트로)은
+    renderer가 붙이므로 여기서는 추가하지 않는다.
     길이는 renderer의 구간 영상 길이에 그대로 사용된다.
     """
     if daily_dir is None:
         daily_dir = config.DATA_DIR
     try:
-        from moviepy.editor import AudioClip, AudioFileClip, concatenate_audioclips
+        from moviepy.editor import AudioFileClip, concatenate_audioclips
         import json as _json
 
         sections = script_data.get("script_sections", [])
@@ -108,18 +110,8 @@ def generate_tts_per_section(script_data: dict, daily_dir: str = None):
             durations.append(round(clip.duration, 3))
             print(f"  -> 구간 {index + 1} 합성 완료: {durations[-1]}초")
 
-        def make_silence(t):
-            return [0, 0]
-
-        summary_lines = script_data.get("summary_3_lines", [])
-        silence_intro = AudioClip(make_frame=make_silence, duration=3.0)
-        silence_outro = AudioClip(
-            make_frame=make_silence, duration=4.0 if summary_lines else 0
-        )
-        parts = [silence_intro] + section_clips
-        if silence_outro.duration > 0:
-            parts.append(silence_outro)
-        final_audio = concatenate_audioclips(parts)
+        # 앞뒤 무음은 renderer가 붙이므로, 여기서는 순수 내레이션만 합친다.
+        final_audio = concatenate_audioclips(section_clips)
 
         output_path = os.path.join(daily_dir, "4_audio.mp3")
         final_audio.write_audiofile(output_path, fps=44100, logger=None)

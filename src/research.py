@@ -16,7 +16,7 @@ def _is_valid_url(value: str) -> bool:
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
 
-def _is_reachable(url: str, timeout: int = 10) -> bool:
+def _check_url(url: str, timeout: int = 10) -> tuple[bool, str]:
     """URL이 실제로 존재하는지 확인한다. HEAD를 먼저 쓰고, 미지원 시 GET으로 재시도한다.
     401/403은 봇 차단일 가능성이 높아 존재하는 것으로 간주하고, 404/410만 없는 것으로 본다."""
     headers = {
@@ -26,13 +26,25 @@ def _is_reachable(url: str, timeout: int = 10) -> bool:
         response = requests.head(url, timeout=timeout, allow_redirects=True, headers=headers)
         if response.status_code == 405:
             response = requests.get(url, timeout=timeout, allow_redirects=True, headers=headers, stream=True)
-        return response.status_code in {200, 201, 202, 203, 204, 206, 301, 302, 303, 307, 308, 401, 403}
-    except requests.RequestException:
-        return False
+        ok_statuses = {200, 201, 202, 203, 204, 206, 301, 302, 303, 307, 308, 401, 403}
+        return response.status_code in ok_statuses, f"HTTP {response.status_code}"
+    except requests.RequestException as e:
+        return False, f"{type(e).__name__}"
+
+
+def _is_reachable(url: str, timeout: int = 10) -> bool:
+    ok, _ = _check_url(url, timeout)
+    return ok
 
 
 def _filter_reachable_sources(sources: list) -> list:
-    reachable = [s for s in sources if _is_reachable(s.get("url", ""))]
+    reachable = []
+    for s in sources:
+        ok, reason = _check_url(s.get("url", ""))
+        if ok:
+            reachable.append(s)
+        else:
+            print(f"  -> 제외: {s.get('url', '')} ({reason})")
     dropped = len(sources) - len(reachable)
     if dropped:
         print(f"  -> 접속 불가 출처 {dropped}건 제외")
@@ -109,7 +121,10 @@ def generate_research_brief(topic: str, daily_dir: str = None):
 
         brief["sources"] = _filter_reachable_sources(brief["sources"])
         if not brief["sources"]:
-            raise ValueError("접속 가능한 출처가 하나도 없습니다.")
+            raw_path = os.path.join(daily_dir, "1_research_raw.json")
+            with open(raw_path, "w", encoding="utf-8") as file:
+                json.dump(brief, file, ensure_ascii=False, indent=2)
+            raise ValueError(f"접속 가능한 출처가 하나도 없습니다. 원본은 {raw_path}에 저장됨.")
 
         os.makedirs(daily_dir, exist_ok=True)
         path = os.path.join(daily_dir, "1_research_brief.json")
