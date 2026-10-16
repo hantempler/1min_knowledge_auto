@@ -312,7 +312,7 @@ def _run_ffmpeg(cmd: list, temp_dir: str) -> None:
         raise RuntimeError(f"ffmpeg 실패 (exit={result.returncode}). 로그: {log_path}")
 
 
-def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topic: str = None, bgm_path: str = None):
+def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topic: str = None, bgm_path: str = None, section_durations: list | None = None):
     if daily_dir is None:
         daily_dir = config.DATA_DIR
     
@@ -340,6 +340,17 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
             for sec in sections
         ]
         total_narration_chars = sum(narration_lengths)
+
+        # 구간별 실측 길이가 있으면 그대로 쓰고, 없으면 기존 글자수 비례로 대체한다.
+        use_measured = (
+            section_durations is not None
+            and len(section_durations) == len(sections)
+            and all(d > 0 for d in section_durations)
+        )
+        if use_measured:
+            print(f"  -> 구간 실측 길이 사용: {section_durations}")
+        else:
+            print("  -> 실측 길이가 없어 글자수 비례로 대체합니다.")
         
         summary_lines = script_data.get("summary_3_lines", [])
         
@@ -421,7 +432,10 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
             text = clean_subtitle_text(sec.get("narration", sec.get("text", "")))
             keyword = sec["bg_keyword"]
             narration_length = narration_lengths[section_index]
-            sec_duration = (narration_length / total_narration_chars) * total_duration if total_narration_chars > 0 else 5.0
+            if use_measured:
+                sec_duration = section_durations[section_index]
+            else:
+                sec_duration = (narration_length / total_narration_chars) * total_duration if total_narration_chars > 0 else 5.0
             bg_path = get_pexels_video(keyword, sec_duration, daily_dir)
             
             chunks = chunk_text(text, max_length=15)

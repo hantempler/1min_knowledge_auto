@@ -16,6 +16,7 @@ from research import generate_research_brief
 from fact_check import fact_check_script
 from bgm import download_bgm
 from tts_gen import generate_tts
+from tts_gen import generate_tts_per_section
 from renderer import render_video
 from upload_youtube import upload_video
 
@@ -111,17 +112,25 @@ def _run_pipeline():
             print("대본 사실 검토를 통과하지 못했습니다. 2_fact_check.json을 확인하세요.")
             return
 
-    # 5. 음성 합성
+    # 5. 음성 합성 (구간별 합성 + 실측 길이)
     audio_path = os.path.join(daily_dir, "4_audio.mp3")
     if not os.path.exists(audio_path):
         audio_path = os.path.join(daily_dir, "4_audio.wav")
-        
+
+    durations_path = os.path.join(daily_dir, "4_audio_durations.json")
+    section_durations = None
     if os.path.exists(audio_path):
         print(f"\n[5/8] (캐시됨) AI 성우 음성(TTS) 로드 중... ({audio_path})")
+        if os.path.exists(durations_path):
+            try:
+                with open(durations_path, "r", encoding="utf-8") as f:
+                    section_durations = json.load(f).get("durations")
+            except Exception as e:
+                print(f"구간 길이 파일 읽기 실패(글자수 비례로 대체): {e}")
     else:
-        print("\n[5/8] AI 성우 음성(TTS) 생성 중 (Neural2-C 엔진)...")
-        audio_path = generate_tts(script_data, daily_dir)
-        
+        print("\n[5/8] AI 성우 음성(TTS) 생성 중 (구간별 합성, Neural2-C 엔진)...")
+        audio_path, section_durations = generate_tts_per_section(script_data, daily_dir)
+
     if not audio_path:
         print("음성 생성 실패. 파이프라인을 종료합니다.")
         return
@@ -132,7 +141,7 @@ def _run_pipeline():
         
     # 7. 영상 렌더링 (BGM + Pexels + 3줄 요약 + 표지 + 상단 헤더)
     print("\n[7/8] 영상 및 자막 렌더링 중...")
-    video_path = render_video(audio_path, script_data, daily_dir, topic, bgm_path)
+    video_path = render_video(audio_path, script_data, daily_dir, topic, bgm_path, section_durations)
     if not video_path:
         print("영상 렌더링 실패. 파이프라인을 종료합니다.")
         return
