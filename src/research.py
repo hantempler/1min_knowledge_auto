@@ -3,6 +3,7 @@ import os
 import sys
 from urllib.parse import urlparse
 
+import requests
 from google import genai
 from google.genai import types
 
@@ -13,6 +14,29 @@ import config
 def _is_valid_url(value: str) -> bool:
     parsed = urlparse(value)
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _is_reachable(url: str, timeout: int = 10) -> bool:
+    """URL이 실제로 존재하는지 확인한다. HEAD를 먼저 쓰고, 미지원 시 GET으로 재시도한다.
+    401/403은 봇 차단일 가능성이 높아 존재하는 것으로 간주하고, 404/410만 없는 것으로 본다."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+    }
+    try:
+        response = requests.head(url, timeout=timeout, allow_redirects=True, headers=headers)
+        if response.status_code == 405:
+            response = requests.get(url, timeout=timeout, allow_redirects=True, headers=headers, stream=True)
+        return response.status_code in {200, 201, 202, 203, 204, 206, 301, 302, 303, 307, 308, 401, 403}
+    except requests.RequestException:
+        return False
+
+
+def _filter_reachable_sources(sources: list) -> list:
+    reachable = [s for s in sources if _is_reachable(s.get("url", ""))]
+    dropped = len(sources) - len(reachable)
+    if dropped:
+        print(f"  -> 접속 불가 출처 {dropped}건 제외")
+    return reachable
 
 
 def _validate_brief(brief: dict) -> bool:
@@ -82,6 +106,10 @@ def generate_research_brief(topic: str, daily_dir: str = None):
         brief = json.loads(response.text.strip())
         if not _validate_brief(brief):
             raise ValueError("조사 카드의 필수 필드 또는 출처 형식이 올바르지 않습니다.")
+
+        brief["sources"] = _filter_reachable_sources(brief["sources"])
+        if not brief["sources"]:
+            raise ValueError("접속 가능한 출처가 하나도 없습니다.")
 
         os.makedirs(daily_dir, exist_ok=True)
         path = os.path.join(daily_dir, "1_research_brief.json")
