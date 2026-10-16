@@ -1,6 +1,9 @@
 import os
 import json
 import sys
+import logging
+import time
+import traceback
 
 # 상위 폴더(루트)를 모듈 경로에 추가
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -16,7 +19,7 @@ from tts_gen import generate_tts
 from renderer import render_video
 from upload_youtube import upload_video
 
-def main():
+def _run_pipeline():
     print("=== 1분 상식 브리핑 파이프라인 시작 (다이내믹 에디션 v2) ===")
     
     # 0. 작업 폴더 생성
@@ -38,9 +41,16 @@ def main():
         print("주제 선정 실패. 파이프라인을 종료합니다.")
         return
         
-    # 2. 지식 조사 카드 작성
+    # 2. 지식 조사 카드 작성 (구 파일명 1_research.json 하위호환)
     research_file = os.path.join(daily_dir, "1_research_brief.json")
-    if os.path.exists(research_file):
+    legacy_research_file = os.path.join(daily_dir, "1_research.json")
+    if not os.path.exists(research_file) and os.path.exists(legacy_research_file):
+        print("\n[2/8] 구 형식 조사 카드 발견. 새 파일명으로 이관합니다...")
+        with open(legacy_research_file, "r", encoding="utf-8") as f:
+            research_brief = json.load(f)
+        with open(research_file, "w", encoding="utf-8") as f:
+            json.dump(research_brief, f, ensure_ascii=False, indent=2)
+    elif os.path.exists(research_file):
         print("\n[2/8] (캐시됨) 주제 조사 및 출처 정리 로드 중...")
         with open(research_file, "r", encoding="utf-8") as f:
             research_brief = json.load(f)
@@ -52,34 +62,54 @@ def main():
         print("조사 카드 생성 실패. 파이프라인을 종료합니다.")
         return
 
-    # 3. 조사 카드 기반 스크립트 작성
+    # 3-4. 조사 카드 기반 스크립트 작성 + 사실 검토 (자동수정 루프, 최대 3회)
+    # 통과 기준: approved=true이면 issues가 남아 있어도 통과 (경미한 문체 지적은 허용)
+    def _needs_revision(check: dict | None) -> bool:
+        if not check:
+            return True
+        return not check.get("approved")
+
     script_file = os.path.join(daily_dir, "3_script.json")
-    if os.path.exists(script_file):
-        print("\n[3/8] (캐시됨) 대본 로드 중...")
-        with open(script_file, "r", encoding="utf-8") as f:
-            script_data = json.load(f)
-    else:
-        print("\n[3/8] 조사 카드 기반 대본 작성 중...")
-        script_data = generate_script(topic, daily_dir, research_brief)
-        
-    if not script_data:
-        print("대본 작성 실패. 파이프라인을 종료합니다.")
-        return
-    print(f"-> 컷 수: {len(script_data.get('script_sections', []))}컷")
-    
-    # 4. 대본 사실 검토
     fact_check_file = os.path.join(daily_dir, "2_fact_check.json")
-    if os.path.exists(fact_check_file):
-        print("\n[4/8] (캐시됨) 대본 사실관계 검토 로드 중...")
-        with open(fact_check_file, "r", encoding="utf-8") as f:
-            fact_check = json.load(f)
-    else:
-        print("\n[4/8] 대본 사실관계 검토 중...")
-        fact_check = fact_check_script(topic, research_brief, script_data, daily_dir)
-        
-    if not fact_check or not fact_check.get("approved"):
-        print("대본 사실 검토를 통과하지 못했습니다. 2_fact_check.json을 확인하세요.")
-        return
+    script_data = None
+    fact_check = None
+    feedback = None
+
+    for attempt in range(1, 4):
+        if attempt == 1 and os.path.exists(script_file):
+            print("\n[3/8] (캐시됨) 대본 로드 중...")
+            with open(script_file, "r", encoding="utf-8") as f:
+                script_data = json.load(f)
+        else:
+            if attempt == 1:
+                print("\n[3/8] 조사 카드 기반 대본 작성 중...")
+            else:
+                print(f"\n[3/8] 팩트체크 지적 반영하여 대본 재생성 중... ({attempt}/3)")
+            script_data = generate_script(topic, daily_dir, research_brief, feedback=feedback)
+
+        if not script_data:
+            print("대본 작성 실패. 파이프라인을 종료합니다.")
+            return
+        print(f"-> 컷 수: {len(script_data.get('script_sections', []))}컷")
+
+        if attempt == 1 and os.path.exists(fact_check_file) and feedback is None:
+            print("\n[4/8] (캐시됨) 대본 사실관계 검토 로드 중...")
+            with open(fact_check_file, "r", encoding="utf-8") as f:
+                fact_check = json.load(f)
+        else:
+            print("\n[4/8] 대본 사실관계 검토 중...")
+            fact_check = fact_check_script(topic, research_brief, script_data, daily_dir)
+
+        if not _needs_revision(fact_check):
+            print("-> 팩트체크 통과")
+            break
+
+        feedback = fact_check
+        if attempt < 3:
+            print(f"-> 지적 {len(fact_check.get('issues', []))}건 발견. 수정 후 재생성합니다.")
+        else:
+            print("대본 사실 검토를 통과하지 못했습니다. 2_fact_check.json을 확인하세요.")
+            return
 
     # 5. 음성 합성
     audio_path = os.path.join(daily_dir, "4_audio.mp3")
@@ -136,6 +166,39 @@ def main():
         print(f"업로드 주소: {upload_url}")
     else:
         print("업로드 실패 또는 주소를 받아오지 못했습니다.")
+
+
+def main():
+    """실행 로그(pipeline.log)와 결과 요약(pipeline_run.json)을 남기는 진입점."""
+    daily_dir = config.get_daily_dir()
+    log_path = os.path.join(daily_dir, "pipeline.log")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        handlers=[
+            logging.FileHandler(log_path, encoding="utf-8"),
+            logging.StreamHandler(),
+        ],
+        force=True,
+    )
+    run_state = {"status": "running", "log_file": log_path}
+    start = time.time()
+    try:
+        _run_pipeline()
+        run_state["status"] = "done"
+    except Exception:
+        logging.exception("파이프라인 예외 발생")
+        run_state["status"] = "error"
+        run_state["traceback"] = traceback.format_exc()
+        raise
+    finally:
+        run_state["duration_sec"] = round(time.time() - start, 1)
+        try:
+            with open(os.path.join(daily_dir, "pipeline_run.json"), "w", encoding="utf-8") as f:
+                json.dump(run_state, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logging.warning(f"pipeline_run.json 저장 실패: {e}")
+
 
 if __name__ == "__main__":
     main()

@@ -300,6 +300,18 @@ def create_pil_text_clip(text, font_path, fontsize, temp_dir, text_type="title")
     img.save(temp_path)
     return temp_path
 
+def _run_ffmpeg(cmd: list, temp_dir: str) -> None:
+    """ffmpeg 실행 결과를 temp_dir/ffmpeg.log에 남기고, 실패 시 예외를 발생시킨다."""
+    import subprocess
+    log_path = os.path.join(temp_dir, "ffmpeg.log")
+    with open(log_path, "ab") as log_file:
+        log_file.write(("$ " + " ".join(str(c) for c in cmd) + "\n").encode("utf-8", "replace"))
+        log_file.flush()
+        result = subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT)
+    if result.returncode != 0:
+        raise RuntimeError(f"ffmpeg 실패 (exit={result.returncode}). 로그: {log_path}")
+
+
 def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topic: str = None, bgm_path: str = None):
     if daily_dir is None:
         daily_dir = config.DATA_DIR
@@ -396,9 +408,9 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
         
         intro_ts = os.path.join(temp_dir, "chunk_intro.ts")
         if cover_photo and os.path.exists(cover_photo):
-            subprocess.run(["ffmpeg", "-y", "-loop", "1", "-i", cover_photo, "-i", bg_png, "-t", "3.0", "-filter_complex", "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", intro_ts], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _run_ffmpeg(["ffmpeg", "-y", "-loop", "1", "-i", cover_photo, "-i", bg_png, "-t", "3.0", "-filter_complex", "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", intro_ts], temp_dir)
         else:
-            subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=#141432:s=1080x1920:d=3.0:r=24", "-i", bg_png, "-filter_complex", "[0:v][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", intro_ts], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            _run_ffmpeg(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=#141432:s=1080x1920:d=3.0:r=24", "-i", bg_png, "-filter_complex", "[0:v][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", intro_ts], temp_dir)
         concat_list.append(f"file 'chunk_intro.ts'")
         
         # 2. 본문 컷
@@ -455,9 +467,9 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
                 
                 ts_path = os.path.join(temp_dir, f"chunk_body_{chunk_idx}.ts")
                 if bg_path and os.path.exists(bg_path):
-                    subprocess.run(["ffmpeg", "-y", "-stream_loop", "-1", "-ss", str(current_sec), "-i", bg_path, "-i", overlay_png, "-t", str(chunk_duration), "-filter_complex", "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", ts_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    _run_ffmpeg(["ffmpeg", "-y", "-stream_loop", "-1", "-ss", str(current_sec), "-i", bg_path, "-i", overlay_png, "-t", str(chunk_duration), "-filter_complex", "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", ts_path], temp_dir)
                 else:
-                    subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", f"color=c=#323232:s=1080x1920:d={chunk_duration}:r=24", "-i", overlay_png, "-filter_complex", "[0:v][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", ts_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    _run_ffmpeg(["ffmpeg", "-y", "-f", "lavfi", "-i", f"color=c=#323232:s=1080x1920:d={chunk_duration}:r=24", "-i", overlay_png, "-filter_complex", "[0:v][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", ts_path], temp_dir)
                 
                 concat_list.append(f"file 'chunk_body_{chunk_idx}.ts'")
                 chunk_idx += 1
@@ -479,9 +491,9 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
             
             outro_ts = os.path.join(temp_dir, "chunk_outro.ts")
             if summary_photo and os.path.exists(summary_photo):
-                subprocess.run(["ffmpeg", "-y", "-loop", "1", "-i", summary_photo, "-i", s_overlay, "-t", "4.0", "-filter_complex", "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", outro_ts], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                _run_ffmpeg(["ffmpeg", "-y", "-loop", "1", "-i", summary_photo, "-i", s_overlay, "-t", "4.0", "-filter_complex", "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", outro_ts], temp_dir)
             else:
-                subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=#0a0a1e:s=1080x1920:d=4.0:r=24", "-i", s_overlay, "-filter_complex", "[0:v][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", outro_ts], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                _run_ffmpeg(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=#0a0a1e:s=1080x1920:d=4.0:r=24", "-i", s_overlay, "-filter_complex", "[0:v][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", outro_ts], temp_dir)
             concat_list.append(f"file 'chunk_outro.ts'")
             
         print("  -> 비디오 합치기(Concat) 및 오디오 병합 중...")
@@ -490,10 +502,10 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
             f.write("\n".join(concat_list))
             
         raw_video_ts = os.path.join(temp_dir, "raw_video.ts")
-        subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_txt_path, "-c", "copy", raw_video_ts], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _run_ffmpeg(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_txt_path, "-c", "copy", raw_video_ts], temp_dir)
         
         output_path = os.path.join(daily_dir, "final_shorts.mp4")
-        subprocess.run(["ffmpeg", "-y", "-i", raw_video_ts, "-i", raw_audio_path, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", output_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        _run_ffmpeg(["ffmpeg", "-y", "-i", raw_video_ts, "-i", raw_audio_path, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", output_path], temp_dir)
         
         print(f"영상 렌더링 완료: {output_path}")
         return output_path

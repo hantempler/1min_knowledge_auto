@@ -16,6 +16,10 @@ os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.path.join(CONFIG_DIR, "applica
 GCP_PROJECT_ID = "project-beba2bf6-d235-4031-ba5"
 GCP_LOCATION = "us-central1"
 
+# 모델 티어링: 가벼운 작업(주제/조사/검증)은 flash, 대본만 pro
+MODEL_FAST = "gemini-2.5-flash"
+MODEL_PRO = "gemini-2.5-pro"
+
 # YouTube & Pexels API Key
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")

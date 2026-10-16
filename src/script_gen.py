@@ -6,7 +6,7 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 
-def generate_script(topic: str, daily_dir: str = None, research_brief: dict = None):
+def generate_script(topic: str, daily_dir: str = None, research_brief: dict = None, feedback: dict | None = None):
     if daily_dir is None:
         daily_dir = config.DATA_DIR
         
@@ -25,6 +25,13 @@ def generate_script(topic: str, daily_dir: str = None, research_brief: dict = No
             
     research_json = json.dumps(research_brief or {}, ensure_ascii=False, indent=2)
     why_today_context = f'\n[오늘의 주제 선정 배경 (참고용)]\n"{why_today}"\n' if why_today else ""
+    feedback_context = ""
+    if feedback:
+        feedback_context = f"""
+[이전 대본에 대한 팩트체크 수정 요청 - 반드시 반영하세요]
+{json.dumps(feedback, ensure_ascii=False, indent=2)}
+위 issues/corrections에 나온 과장된 수치, 단정적 표현, 조사카드에 없는 내용을 모두 고쳐서 새로 작성하세요.
+"""
     
     prompt = f"""
 {config.SYSTEM_PROMPT}
@@ -33,7 +40,7 @@ def generate_script(topic: str, daily_dir: str = None, research_brief: dict = No
 
 다음 조사 카드를 반드시 근거로 사용하세요. 조사 카드에 없는 사실을 새로 만들지 마세요.
 {research_json}
-
+{feedback_context}
 위 주제로 유튜브 숏츠 대본을 작성해줘.
 정확한 설명체로 작성해줘. 예능톤, 밈, 유행어, 과장된 비유, 감탄사 중심의 문장을 사용하지 마.
 시청자가 개념을 이해할 수 있도록 정의, 작동 원리, 실제 사례 또는 영향 순서로 설명해.
@@ -76,7 +83,7 @@ JSON 포맷 예시:
     
     try:
         response = client.models.generate_content(
-            model='gemini-2.5-pro',
+            model=config.MODEL_PRO,
             contents=prompt,
             config=types.GenerateContentConfig(response_mime_type="application/json")
         )

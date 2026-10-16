@@ -75,7 +75,7 @@ def generate_research_brief(topic: str, daily_dir: str = None):
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.5-pro",
+            model=config.MODEL_FAST,
             contents=prompt,
             config=types.GenerateContentConfig(response_mime_type="application/json"),
         )
@@ -84,7 +84,7 @@ def generate_research_brief(topic: str, daily_dir: str = None):
             raise ValueError("조사 카드의 필수 필드 또는 출처 형식이 올바르지 않습니다.")
 
         os.makedirs(daily_dir, exist_ok=True)
-        path = os.path.join(daily_dir, "1_research.json")
+        path = os.path.join(daily_dir, "1_research_brief.json")
         with open(path, "w", encoding="utf-8") as file:
             json.dump(brief, file, ensure_ascii=False, indent=2)
         return brief

@@ -83,7 +83,7 @@ def get_todays_topic(daily_dir=None, reference_date=None):
 """
     try:
         response = client.models.generate_content(
-            model="gemini-2.5-pro",
+            model=config.MODEL_FAST,
             contents=prompt,
             config=types.GenerateContentConfig(response_mime_type="application/json"),
         )

@@ -41,7 +41,7 @@ JSON만 출력하세요.
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.5-pro",
+            model=config.MODEL_FAST,
             contents=prompt,
             config=types.GenerateContentConfig(response_mime_type="application/json"),
         )
