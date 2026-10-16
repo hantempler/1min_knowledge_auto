@@ -2,7 +2,6 @@ import os
 import re
 import unicodedata
 from xml.sax.saxutils import escape
-from google.cloud import texttospeech
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
@@ -135,57 +134,13 @@ def generate_tts_per_section(script_data: dict, daily_dir: str = None):
         print(f"TTS 생성 오류: {e}")
         return None, None
 
-
-def generate_tts(script_data: dict, daily_dir: str = None):
-    """기존 방식: 전체 대본을 한 번에 합성한다. (하위호환용으로 유지)"""
-    if daily_dir is None:
-        daily_dir = config.DATA_DIR
-    try:
-        # JSON에서 전체 텍스트 추출
-        sections = script_data.get("script_sections", [])
-        section_texts = [
-            sec.get("narration", sec.get("text", "")).strip()
-            for sec in sections
-        ]
-        ssml_text = build_ssml(section_texts)
-        if ssml_text == "<speak></speak>":
-            raise ValueError("읽을 대본이 없습니다.")
-        
-        client = texttospeech.TextToSpeechClient()
-
-        synthesis_input = texttospeech.SynthesisInput(ssml=ssml_text)
-
-        voice = texttospeech.VoiceSelectionParams(
-            language_code="ko-KR",
-            name="ko-KR-Neural2-C"
-        )
-
-        audio_config = texttospeech.AudioConfig(
-            audio_encoding=texttospeech.AudioEncoding.MP3,
-            speaking_rate=1.0,
-            pitch=0.0
-        )
-
-        response = client.synthesize_speech(
-            input=synthesis_input, voice=voice, audio_config=audio_config
-        )
-
-        output_path = os.path.join(daily_dir, "4_audio.mp3")
-        with open(output_path, "wb") as out:
-            out.write(response.audio_content)
-            print(f'Audio content written to file "{output_path}"')
-            
-        return output_path
-    except Exception as e:
-        print(f"TTS 생성 오류: {e}")
-        return None
-
 if __name__ == "__main__":
     import json
-    test_script_path = os.path.join(config.DATA_DIR, "latest_script.json")
-    if os.path.exists(test_script_path):
-        with open(test_script_path, "r", encoding="utf-8") as f:
+    import glob
+    candidates = sorted(glob.glob(os.path.join(config.DATA_DIR, "*", "3_script.json")))
+    if candidates:
+        with open(candidates[-1], "r", encoding="utf-8") as f:
             data = json.load(f)
-            generate_tts(data)
+            generate_tts_per_section(data, os.path.dirname(candidates[-1]))
     else:
-        print("최신 대본(JSON) 파일이 없습니다.")
+        print("테스트용 대본(3_script.json)이 없습니다.")

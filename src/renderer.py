@@ -2,8 +2,8 @@ import os
 import re
 import requests
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont, ImageOps
-from moviepy.editor import AudioFileClip, CompositeAudioClip, CompositeVideoClip, VideoFileClip, ImageClip, concatenate_videoclips, ColorClip
+from PIL import Image, ImageDraw, ImageFont
+from moviepy.editor import AudioFileClip, CompositeAudioClip
 from moviepy.audio.fx.all import audio_fadeout, audio_loop
 import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -122,44 +122,6 @@ def clean_subtitle_text(text: str) -> str:
     text = re.sub(r"\([^()]*\)", "", text or "")
     text = re.sub(r"[‘’'`\"]", "", text)
     return re.sub(r"\s+", " ", text).strip()
-
-def create_pil_subtitle_clip(text, font_path, fontsize, temp_dir):
-    try:
-        font = ImageFont.truetype(font_path, fontsize)
-    except IOError:
-        font = ImageFont.load_default()
-        
-    canvas_w, canvas_h = 1080, 200
-    img = Image.new('RGBA', (canvas_w, canvas_h), (255, 255, 255, 0))
-    draw = ImageDraw.Draw(img)
-    
-    try:
-        bbox = draw.multiline_textbbox((0, 0), text, font=font, spacing=10)
-        text_w = bbox[2] - bbox[0]
-        
-        while text_w > 980 and fontsize > 30:
-            fontsize -= 2
-            try:
-                font = ImageFont.truetype(font_path, fontsize)
-            except IOError:
-                break
-            bbox = draw.multiline_textbbox((0, 0), text, font=font, spacing=10)
-            text_w = bbox[2] - bbox[0]
-            
-        text_h = bbox[3] - bbox[1]
-    except AttributeError:
-        # 구버전 PIL 하위 호환
-        text_w, text_h = draw.textsize(text, font=font)
-    
-    x = (canvas_w - text_w) / 2
-    y = (canvas_h - text_h) / 2
-    draw.multiline_text((x, y), text, font=font, fill='white', align='center', spacing=10, stroke_width=3, stroke_fill='black')
-    
-    temp_path = os.path.join(temp_dir, f"temp_{abs(hash(text))}.png")
-    img.save(temp_path)
-    
-    # moviepy ImageClip으로 변환 시 np.array로 로드
-    return temp_path
 
 def create_pil_text_clip(text, font_path, fontsize, temp_dir, text_type="title"):
     try:

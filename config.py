@@ -21,7 +21,6 @@ MODEL_FAST = "gemini-2.5-flash"
 MODEL_PRO = "gemini-2.5-pro"
 
 # YouTube & Pexels API Key
-YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
 JAMENDO_CLIENT_ID = os.getenv("JAMENDO_CLIENT_ID")
 

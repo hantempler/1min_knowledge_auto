@@ -15,7 +15,6 @@ from script_gen import generate_script
 from research import generate_research_brief
 from fact_check import fact_check_script
 from bgm import download_bgm
-from tts_gen import generate_tts
 from tts_gen import generate_tts_per_section
 from renderer import render_video
 from upload_youtube import upload_video

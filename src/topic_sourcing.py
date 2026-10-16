@@ -1,7 +1,7 @@
 import json
 import os
 import sys
-from datetime import date, datetime
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from google import genai

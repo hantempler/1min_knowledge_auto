@@ -1,12 +1,7 @@
-import os
 import sys
 import json
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
-
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import config
 
 def get_naver_headlines():
     print("  -> 네이버 뉴스 분야별 헤드라인 수집 중...")

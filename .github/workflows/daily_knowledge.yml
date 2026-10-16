@@ -43,7 +43,6 @@ jobs:
           mkdir -p config
           echo "PEXELS_API_KEY=${{ secrets.PEXELS_API_KEY }}" > config/.env
           echo "JAMENDO_CLIENT_ID=${{ secrets.JAMENDO_CLIENT_ID }}" >> config/.env
-          echo "YOUTUBE_API_KEY=${{ secrets.YOUTUBE_API_KEY }}" >> config/.env
 
       - name: Setup YouTube Token
         env:
