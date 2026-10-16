@@ -124,145 +124,6 @@ def clean_subtitle_text(text: str) -> str:
     text = re.sub(r"[‘’'`\"]", "", text)
     return re.sub(r"\s+", " ", text).strip()
 
-def create_pil_text_clip(text, font_path, fontsize, temp_dir, text_type="title"):
-    try:
-        font = ImageFont.truetype(font_path, fontsize)
-    except IOError:
-        font = ImageFont.load_default()
-        
-    canvas_w, canvas_h = 1080, 1920
-    img = Image.new('RGBA', (canvas_w, canvas_h), (255, 255, 255, 0))
-    draw = ImageDraw.Draw(img)
-    
-    if text_type == "header":
-        bbox = draw.textbbox((0, 0), text, font=font)
-        x = (canvas_w - (bbox[2] - bbox[0])) / 2
-        y = 150
-        draw.text((x, y), text, font=font, fill=(255, 255, 255, 220), stroke_width=2, stroke_fill='black')
-
-    elif text_type == "topic":
-        max_width = 900
-        topic_lines = []
-        current_line = ""
-        for word in text.split(" "):
-            candidate = f"{current_line} {word}".strip()
-            candidate_width = draw.textbbox((0, 0), candidate, font=font)[2]
-            if current_line and candidate_width > max_width:
-                topic_lines.append(current_line)
-                current_line = word
-            else:
-                current_line = candidate
-        if current_line:
-            topic_lines.append(current_line)
-
-        topic_text = "\n".join(topic_lines)
-        bbox = draw.multiline_textbbox((0, 0), topic_text, font=font, spacing=10)
-        x = (canvas_w - (bbox[2] - bbox[0])) / 2
-        draw.multiline_text((x, 225), topic_text, font=font, fill='#FFD700', align='center', spacing=10, stroke_width=3, stroke_fill='black')
-        
-    elif text_type == "cover":
-        # 중앙에 크게
-        bbox = draw.multiline_textbbox((0, 0), text, font=font, spacing=20)
-        x = (canvas_w - (bbox[2] - bbox[0])) / 2
-        y = (canvas_h - (bbox[3] - bbox[1])) / 2
-        draw.multiline_text((x, y), text, font=font, fill='#FFD700', align='center', spacing=20, stroke_width=4, stroke_fill='black')
-        
-    elif text_type == "summary":
-        lines = [line.strip() for line in text.splitlines() if line.strip()]
-        # "오늘의 상식\n[{cover_title}]\n요약1\n요약2\n요약3"
-        title_1 = lines[0] if len(lines) > 0 else "오늘의 상식"
-        title_2 = lines[1] if len(lines) > 1 else "[오늘의 1분 상식]"
-        summary_lines = lines[2:5] if len(lines) > 4 else lines[2:]
-
-        title1_font = ImageFont.truetype(font_path, 50)
-        title1_bbox = draw.textbbox((0, 0), title_1, font=title1_font)
-        title1_x = (canvas_w - (title1_bbox[2] - title1_bbox[0])) / 2
-        draw.text((title1_x, 390), title_1, font=title1_font, fill='white', stroke_width=2, stroke_fill='black')
-
-        title2_font = ImageFont.truetype(font_path, 65)
-        
-        # 줄바꿈 헬퍼
-        max_width = 980
-        t2_lines = []
-        current_line = ""
-        for word in title_2.split():
-            candidate = f"{current_line} {word}".strip()
-            if draw.textbbox((0,0), candidate, font=title2_font)[2] > max_width:
-                if current_line:
-                    t2_lines.append(current_line)
-                current_line = word
-            else:
-                current_line = candidate
-        if current_line:
-            t2_lines.append(current_line)
-        title_2_wrapped = "\n".join(t2_lines)
-
-        title2_bbox = draw.multiline_textbbox((0, 0), title_2_wrapped, font=title2_font, spacing=10)
-        title2_x = (canvas_w - (title2_bbox[2] - title2_bbox[0])) / 2
-        draw.multiline_text((title2_x, 465), title_2_wrapped, font=title2_font, fill='#FFD700', align='center', spacing=10, stroke_width=3, stroke_fill='black')
-
-        row_x = 70
-        row_width = canvas_w - (row_x * 2)
-        row_height = 190
-        row_gap = 28
-        first_row_y = 620
-        number_font = ImageFont.truetype(font_path, 44)
-        body_font = ImageFont.truetype(font_path, 43)
-
-        import re
-        for index, summary_line in enumerate(summary_lines, start=1):
-            summary_line = re.sub(r'^\d+\.\s*', '', summary_line).strip()
-            if ':' in summary_line:
-                summary_label, summary_line = summary_line.split(':', 1)
-                summary_label = summary_label.strip()
-                summary_line = summary_line.strip()
-            else:
-                summary_label = ''
-            wrapped_lines = []
-            current_line = ""
-            max_text_width = row_width - 170
-            for word in summary_line.split():
-                candidate = f"{current_line} {word}".strip()
-                candidate_width = draw.textbbox((0, 0), candidate, font=body_font)[2]
-                if current_line and candidate_width > max_text_width:
-                    wrapped_lines.append(current_line)
-                    current_line = word
-                else:
-                    current_line = candidate
-            if current_line:
-                wrapped_lines.append(current_line)
-
-            row_y = first_row_y + (index - 1) * (row_height + row_gap)
-            draw.rounded_rectangle(
-                (row_x, row_y, row_x + row_width, row_y + row_height),
-                radius=18,
-                fill=(28, 31, 52, 235),
-                outline=(255, 215, 0, 180),
-                width=2,
-            )
-            number_bbox = (row_x + 24, row_y + 55, row_x + 94, row_y + 125)
-            draw.ellipse(number_bbox, fill='#FFD700')
-            number_text = str(index)
-            number_text_bbox = draw.textbbox((0, 0), number_text, font=number_font)
-            number_x = (number_bbox[0] + number_bbox[2] - (number_text_bbox[2] - number_text_bbox[0])) / 2
-            number_y = (number_bbox[1] + number_bbox[3] - (number_text_bbox[3] - number_text_bbox[1])) / 2 - 6
-            draw.text((number_x, number_y), number_text, font=number_font, fill='#111323')
-
-            body_text = "\n".join(wrapped_lines[:2])
-            text_x = row_x + 125
-            if summary_label:
-                label_font = ImageFont.truetype(font_path, 36)
-                draw.text((text_x, row_y + 34), summary_label, font=label_font, fill='#FFD700', stroke_width=1, stroke_fill='black')
-                body_y = row_y + 86
-            else:
-                body_bbox = draw.multiline_textbbox((0, 0), body_text, font=body_font, spacing=10)
-                body_y = row_y + (row_height - (body_bbox[3] - body_bbox[1])) / 2 - 4
-            draw.multiline_text((text_x, body_y), body_text, font=body_font, fill='white', spacing=10, stroke_width=1, stroke_fill='black')
-        
-    temp_path = os.path.join(temp_dir, f"temp_{abs(hash(text))}.png")
-    img.save(temp_path)
-    return temp_path
-
 def _run_ffmpeg(cmd: list, temp_dir: str) -> None:
     """ffmpeg 실행 결과를 temp_dir/ffmpeg.log에 남기고, 실패 시 예외를 발생시킨다."""
     import subprocess
@@ -315,13 +176,11 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
         else:
             print("  -> 실측 길이가 없어 글자수 비례로 대체합니다.")
         
-        summary_lines = script_data.get("summary_3_lines", [])
-        
         # 0. 오디오 믹싱 (MoviePy Audio만 사용)
         from moviepy.editor import AudioClip, concatenate_audioclips
         def make_silence(t): return [0, 0]
         silence_intro = AudioClip(make_frame=make_silence, duration=3.0)
-        silence_outro = AudioClip(make_frame=make_silence, duration=4.0 if summary_lines else 0)
+        silence_outro = AudioClip(make_frame=make_silence, duration=3.0)
         
         final_audio = concatenate_audioclips([silence_intro, audio_clip, silence_outro])
         if bgm_path and os.path.exists(bgm_path):
@@ -476,32 +335,38 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
                 chunk_idx += 1
                 current_sec += chunk_duration
                 
-        # 3. 아웃트로 (3줄 요약) 컷 추가 (4초)
-        if summary_lines:
-            print("  -> 아웃트로 컷 렌더링 중...")
-            original_cover = script_data.get("cover_title", "오늘의 1분 상식")
-            summary_text = f"오늘의 상식\n[{original_cover}]\n" + "\n".join(summary_lines)
-            summary_png_path = create_pil_text_clip(summary_text, font_path, 50, temp_dir, "summary")
-            sections_for_summary = script_data.get("script_sections", [])
-            summary_keyword = (
-                script_data.get("summary_keyword")
-                or (sections_for_summary[-1].get("bg_keyword") if sections_for_summary else "")
-                or topic_str
-            )
-            summary_photo = get_pexels_photo(summary_keyword, daily_dir, photo_index=1, filename="summary_topic.jpg")
-            
-            s_overlay = os.path.join(temp_dir, "summary_overlay.png")
-            s_img = Image.open(summary_png_path)
-            s_draw = ImageDraw.Draw(s_img)
-            s_draw.text(((1080 - (h_bbox[2] - h_bbox[0])) / 2, 150), header_str, font=font40, fill=(255, 255, 255, 220), stroke_width=2, stroke_fill='black')
-            s_img.save(s_overlay)
-            
-            outro_ts = os.path.join(temp_dir, "chunk_outro.ts")
-            if summary_photo and os.path.exists(summary_photo):
-                _run_ffmpeg(["ffmpeg", "-y", "-loop", "1", "-i", summary_photo, "-i", s_overlay, "-t", "4.0", "-filter_complex", "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", outro_ts], temp_dir)
-            else:
-                _run_ffmpeg(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=#0a0a1e:s=1080x1920:d=4.0:r=24", "-i", s_overlay, "-filter_complex", "[0:v][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", outro_ts], temp_dir)
-            concat_list.append(f"file 'chunk_outro.ts'")
+        # 3. 아웃트로 (구독 유도) 컷 추가 (3초)
+        print("  -> 아웃트로 컷 렌더링 중...")
+        sections_for_summary = script_data.get("script_sections", [])
+        summary_keyword = (
+            script_data.get("summary_keyword")
+            or (sections_for_summary[-1].get("bg_keyword") if sections_for_summary else "")
+            or topic_str
+        )
+        summary_photo = get_pexels_photo(summary_keyword, daily_dir, photo_index=1, filename="summary_topic.jpg")
+
+        cta_png = os.path.join(temp_dir, "cta_overlay.png")
+        cta_img = Image.new('RGBA', (1080, 1920), (255, 255, 255, 0))
+        cta_draw = ImageDraw.Draw(cta_img)
+        cta_draw.text(((1080 - (h_bbox[2] - h_bbox[0])) / 2, 150), header_str, font=font40, fill=(255, 255, 255, 220), stroke_width=2, stroke_fill='black')
+
+        cta_small = ImageFont.truetype(font_path, 60)
+        cta_big = ImageFont.truetype(font_path, 120)
+        cta_sub = ImageFont.truetype(font_path, 46)
+        small_bbox = cta_draw.textbbox((0, 0), "유익했다면", font=cta_small)
+        cta_draw.text(((1080 - (small_bbox[2] - small_bbox[0])) / 2, 780), "유익했다면", font=cta_small, fill='white', stroke_width=2, stroke_fill='black')
+        big_bbox = cta_draw.textbbox((0, 0), "좋아요 · 구독", font=cta_big)
+        cta_draw.text(((1080 - (big_bbox[2] - big_bbox[0])) / 2, 880), "좋아요 · 구독", font=cta_big, fill='#FFD700', stroke_width=4, stroke_fill='black')
+        sub_bbox = cta_draw.textbbox((0, 0), "매일 1분 상식 브리핑", font=cta_sub)
+        cta_draw.text(((1080 - (sub_bbox[2] - sub_bbox[0])) / 2, 1080), "매일 1분 상식 브리핑", font=cta_sub, fill=(255, 255, 255, 230), stroke_width=2, stroke_fill='black')
+        cta_img.save(cta_png)
+
+        outro_ts = os.path.join(temp_dir, "chunk_outro.ts")
+        if summary_photo and os.path.exists(summary_photo):
+            _run_ffmpeg(["ffmpeg", "-y", "-loop", "1", "-i", summary_photo, "-i", cta_png, "-t", "3.0", "-filter_complex", "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", outro_ts], temp_dir)
+        else:
+            _run_ffmpeg(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=#0a0a1e:s=1080x1920:d=3.0:r=24", "-i", cta_png, "-filter_complex", "[0:v][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", outro_ts], temp_dir)
+        concat_list.append(f"file 'chunk_outro.ts'")
             
         print("  -> 비디오 합치기(Concat) 및 오디오 병합 중...")
         concat_txt_path = os.path.join(temp_dir, "concat.txt")
