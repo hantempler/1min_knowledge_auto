@@ -206,15 +206,22 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
         )
         cover_photo = get_pexels_photo(cover_keyword, daily_dir, photo_index=0, filename="cover_topic.jpg")
 
-        # 주제 선정 배경(왜 이 주제인지)을 인트로 하단에 표시한다.
+        # 주제 선정 배경(왜 이 주제인지)을 주제 바로 아래에 표시한다.
         news_context = ""
         try:
             with open(os.path.join(daily_dir, "0_topic_selection.json"), "r", encoding="utf-8") as f:
                 news_context = json.load(f).get("why_today", "") or ""
         except Exception:
             pass
-        if len(news_context) > 80:
-            news_context = news_context[:80].rstrip() + "…"
+        news_context = news_context.strip()
+        if news_context:
+            import re as _re
+            first_end = _re.search(r"[.?!]", news_context)
+            if first_end and first_end.end() <= 90:
+                news_context = news_context[:first_end.end()]
+            elif len(news_context) > 70:
+                cut = news_context[:70].rsplit(" ", 1)[0]
+                news_context = (cut or news_context[:70]).rstrip() + "…"
         
         # 바탕화면에 텍스트 오버레이용 배경 하나 만들기
         bg_png = os.path.join(temp_dir, "intro_overlay.png")
@@ -255,12 +262,15 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
         c_draw.multiline_text(((1080 - (topic_bbox[2] - topic_bbox[0])) / 2, 225), topic_str, font=font58, fill='#FFD700', align='center', spacing=10, stroke_width=3, stroke_fill='black')
 
         if news_context:
-            font36 = ImageFont.truetype(font_path, 36)
-            news_wrapped = wrap_text(news_context, font36, max_width=940)
-            news_lines = news_wrapped.split("\n")[:2]
-            news_text = "\n".join(news_lines)
-            n_bbox = c_draw.multiline_textbbox((0, 0), news_text, font=font36, spacing=8)
-            c_draw.multiline_text(((1080 - (n_bbox[2] - n_bbox[0])) / 2, 1560), news_text, font=font36, fill=(255, 255, 255, 230), align='center', spacing=8, stroke_width=2, stroke_fill='black')
+            font_label = ImageFont.truetype(font_path, 38)
+            label = "왜 지금 이 상식?"
+            l_bbox = c_draw.textbbox((0, 0), label, font=font_label)
+            c_draw.text(((1080 - (l_bbox[2] - l_bbox[0])) / 2, 340), label, font=font_label, fill='#FFD700', stroke_width=2, stroke_fill='black')
+            font38 = ImageFont.truetype(font_path, 38)
+            news_wrapped = wrap_text(news_context, font38, max_width=940)
+            news_text = "\n".join(news_wrapped.split("\n")[:2])
+            n_bbox = c_draw.multiline_textbbox((0, 0), news_text, font=font38, spacing=8)
+            c_draw.multiline_text(((1080 - (n_bbox[2] - n_bbox[0])) / 2, 400), news_text, font=font38, fill=(255, 255, 255, 230), align='center', spacing=8, stroke_width=2, stroke_fill='black')
         c_img.save(bg_png)
         
         intro_ts = os.path.join(temp_dir, "chunk_intro.ts")
