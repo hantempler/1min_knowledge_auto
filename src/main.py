@@ -38,8 +38,7 @@ def _run_pipeline():
         
     print(f"-> 오늘의 주제: {topic}")
     if not topic:
-        print("주제 선정 실패. 파이프라인을 종료합니다.")
-        return
+        raise RuntimeError("주제 선정 실패. 파이프라인을 중단합니다.")
         
     # 2. 지식 조사 카드 작성 (구 파일명 1_research.json 하위호환)
     research_file = os.path.join(daily_dir, "1_research_brief.json")
@@ -59,8 +58,7 @@ def _run_pipeline():
         research_brief = generate_research_brief(topic, daily_dir)
         
     if not research_brief:
-        print("조사 카드 생성 실패. 파이프라인을 종료합니다.")
-        return
+        raise RuntimeError("조사 카드 생성 실패. 파이프라인을 중단합니다.")
 
     # 3-4. 조사 카드 기반 스크립트 작성 + 사실 검토 (자동수정 루프, 최대 3회)
     # 통과 기준: approved=true이면 issues가 남아 있어도 통과 (경미한 문체 지적은 허용)
@@ -88,8 +86,7 @@ def _run_pipeline():
             script_data = generate_script(topic, daily_dir, research_brief, feedback=feedback)
 
         if not script_data:
-            print("대본 작성 실패. 파이프라인을 종료합니다.")
-            return
+            raise RuntimeError("대본 작성 실패. 파이프라인을 중단합니다.")
         print(f"-> 컷 수: {len(script_data.get('script_sections', []))}컷")
 
         if attempt == 1 and os.path.exists(fact_check_file) and feedback is None:
@@ -108,8 +105,7 @@ def _run_pipeline():
         if attempt < 3:
             print(f"-> 지적 {len(fact_check.get('issues', []))}건 발견. 수정 후 재생성합니다.")
         else:
-            print("대본 사실 검토를 통과하지 못했습니다. 2_fact_check.json을 확인하세요.")
-            return
+            raise RuntimeError("대본 사실 검토를 통과하지 못했습니다. 2_fact_check.json을 확인하세요.")
 
     # 5. 음성 합성 (구간별 합성 + 실측 길이)
     audio_path = os.path.join(daily_dir, "4_audio.mp3")
@@ -131,8 +127,7 @@ def _run_pipeline():
         audio_path, section_durations = generate_tts_per_section(script_data, daily_dir)
 
     if not audio_path:
-        print("음성 생성 실패. 파이프라인을 종료합니다.")
-        return
+        raise RuntimeError("음성 생성 실패. 파이프라인을 중단합니다.")
 
     # 6. 주제 분위기에 맞는 BGM 다운로드
     print("\n[6/8] 주제 분위기에 맞는 BGM 다운로드 중...")
@@ -142,8 +137,7 @@ def _run_pipeline():
     print("\n[7/8] 영상 및 자막 렌더링 중...")
     video_path = render_video(audio_path, script_data, daily_dir, topic, bgm_path, section_durations)
     if not video_path:
-        print("영상 렌더링 실패. 파이프라인을 종료합니다.")
-        return
+        raise RuntimeError("영상 렌더링 실패. 파이프라인을 중단합니다.")
         
     # 8. 유튜브 업로드 (OAuth 연동)
     print("\n[8/8] 유튜브 쇼츠 자동 업로드 중 (비공개 상태로 업로드)...")
@@ -173,7 +167,7 @@ def _run_pipeline():
     if upload_url:
         print(f"업로드 주소: {upload_url}")
     else:
-        print("업로드 실패 또는 주소를 받아오지 못했습니다.")
+        raise RuntimeError("업로드 실패 또는 주소를 받아오지 못했습니다.")
 
 
 def main():
