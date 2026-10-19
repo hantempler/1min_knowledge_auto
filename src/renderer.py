@@ -5,7 +5,7 @@ import requests
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from moviepy.editor import AudioFileClip, CompositeAudioClip
-from moviepy.audio.fx.all import audio_fadeout, audio_loop
+from moviepy.audio.fx.all import audio_fadeout, audio_fadein, audio_loop
 import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -306,6 +306,8 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
         silence_intro = AudioClip(make_frame=make_silence, duration=3.0)
         silence_outro = AudioClip(make_frame=make_silence, duration=3.0)
         
+        audio_clip = audio_fadein(audio_clip, 0.01)
+        audio_clip = audio_fadeout(audio_clip, 0.01)
         final_audio = concatenate_audioclips([silence_intro, audio_clip, silence_outro])
         if bgm_path and os.path.exists(bgm_path):
             bgm_clip = AudioFileClip(bgm_path)
@@ -458,9 +460,9 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
             except Exception as e:
                 print(f"표지 그라데이션 처리 실패(원본 그대로 사용): {e}")
                 graded_photo = cover_photo
-            _run_ffmpeg(["ffmpeg", "-y", "-loop", "1", "-i", graded_photo, "-i", bg_png, "-t", "3.0", "-filter_complex", "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", intro_ts], temp_dir)
+            _run_ffmpeg(["ffmpeg", "-y", "-loop", "1", "-i", graded_photo, "-i", bg_png, "-t", "3.0", "-filter_complex", "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24,fade=t=out:st=2.75:d=0.25[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", "-an", intro_ts], temp_dir)
         else:
-            _run_ffmpeg(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=#141432:s=1080x1920:d=3.0:r=24", "-i", bg_png, "-filter_complex", "[0:v][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", intro_ts], temp_dir)
+            _run_ffmpeg(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=#141432:s=1080x1920:d=3.0:r=24", "-i", bg_png, "-filter_complex", "[0:v]fade=t=out:st=2.75:d=0.25[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", "-an", intro_ts], temp_dir)
         concat_list.append(f"file 'chunk_intro.ts'")
         
         # 2. 본문 컷
@@ -468,9 +470,7 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
         # 본문 상단에 계속 노출되는 짧은 주제 표기(런닝 헤더)
         running_title = text_render.wrap_text(c_draw, topic_str, font58, 900)
         running_bbox = c_draw.multiline_textbbox((0, 0), running_title, font=font58, spacing=10)
-        chunk_idx = 0
         for section_index, sec in enumerate(sections):
-            current_sec = 0.0
             text = clean_subtitle_text(sec.get("narration", sec.get("text", "")))
             text = text_render.sanitize(text, font_path)
             keyword = sec["bg_keyword"]
@@ -485,29 +485,38 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
             chunk_total_chars = sum(len(c.replace('\n', ' ').replace(' ', '')) for c in chunks)
             if chunk_total_chars == 0: chunk_total_chars = 1
             
-            for chunk in chunks:
-                chunk_chars = len(chunk.replace('\n', ' ').replace(' ', ''))
-                if chunk_chars == 0: continue
-                chunk_duration = sec_duration * (chunk_chars / chunk_total_chars)
+            sec_ts = os.path.join(temp_dir, f"chunk_section_{section_index}.ts")
+            cmd = ["ffmpeg", "-y"]
+            if bg_path and os.path.exists(bg_path):
+                cmd.extend(["-stream_loop", "-1", "-i", bg_path])
+            else:
+                cmd.extend(["-f", "lavfi", "-i", f"color=c=#323232:s=1080x1920:d={sec_duration}:r=24"])
                 
-                # PNG 오버레이 렌더링
-                overlay_png = os.path.join(temp_dir, f"overlay_{chunk_idx}.png")
+            fade_filter = f"fade=t=in:st=0:d=0.25,fade=t=out:st={max(0, sec_duration - 0.25):.3f}:d=0.25"
+            filter_parts = [f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24,{fade_filter}[bg]"]
+            last_v = "bg"
+            
+            curr_t = 0.0
+            for chunk_idx, chunk in enumerate(chunks):
+                chunk_chars = len(chunk.replace('\n', ' ').replace(' ', ''))
+                chunk_dur = sec_duration * (chunk_chars / chunk_total_chars)
+                t_start = curr_t
+                t_end = curr_t + chunk_dur
+                curr_t = t_end
+                
+                overlay_png = os.path.join(temp_dir, f"overlay_sec{section_index}_c{chunk_idx}.png")
                 o_img = Image.new('RGBA', (1080, 1920), (255, 255, 255, 0))
                 o_draw = ImageDraw.Draw(o_img)
                 
-                # Header
                 o_draw.text(((1080 - (h_bbox[2] - h_bbox[0])) / 2, 150), header_str, font=font40, fill=(255, 255, 255, 220), stroke_width=2, stroke_fill='black')
-                # Topic
                 o_draw.multiline_text(((1080 - (running_bbox[2] - running_bbox[0])) / 2, 225), running_title, font=font58, fill='#FFD700', align='center', spacing=10, stroke_width=3, stroke_fill='black')
                 
-                # Subtitle
                 fontsize = 65
                 try:
                     font_sub = ImageFont.truetype(font_path, fontsize)
                 except IOError:
                     font_sub = ImageFont.load_default()
-                # 자막이 화면 밖으로 넘치지 않도록 줄바꿈을 보장한다.
-                # (한 단어가 너무 길면 글자 단위로 쪼갠다)
+                    
                 def _fit(chunk_value, font_obj):
                     wrapped = text_render.wrap_text(o_draw, chunk_value, font_obj, 980)
                     bbox = o_draw.multiline_textbbox((0, 0), wrapped, font=font_obj, spacing=10)
@@ -523,18 +532,24 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
                     sub_text, sub_bbox, sub_w = _fit(chunk, font_sub)
                 
                 o_draw.multiline_text(((1080 - (sub_bbox[2] - sub_bbox[0])) / 2, 1350), sub_text, font=font_sub, fill='white', align='center', spacing=10, stroke_width=3, stroke_fill='black')
-                
                 o_img.save(overlay_png)
                 
-                ts_path = os.path.join(temp_dir, f"chunk_body_{chunk_idx}.ts")
-                if bg_path and os.path.exists(bg_path):
-                    _run_ffmpeg(["ffmpeg", "-y", "-stream_loop", "-1", "-ss", str(current_sec), "-i", bg_path, "-i", overlay_png, "-t", str(chunk_duration), "-filter_complex", "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", ts_path], temp_dir)
-                else:
-                    _run_ffmpeg(["ffmpeg", "-y", "-f", "lavfi", "-i", f"color=c=#323232:s=1080x1920:d={chunk_duration}:r=24", "-i", overlay_png, "-filter_complex", "[0:v][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", ts_path], temp_dir)
+                cmd.extend(["-i", overlay_png])
+                next_v = f"v{chunk_idx + 1}"
+                filter_parts.append(f"[{last_v}][{chunk_idx + 1}:v]overlay=0:0:enable=\x27between(t,{t_start:.3f},{t_end:.3f})\x27[{next_v}]")
+                last_v = next_v
                 
-                concat_list.append(f"file 'chunk_body_{chunk_idx}.ts'")
-                chunk_idx += 1
-                current_sec += chunk_duration
+            cmd.extend([
+                "-t", str(sec_duration),
+                "-filter_complex", ";".join(filter_parts),
+                "-map", f"[{last_v}]",
+                "-c:v", "libx264",
+                "-preset", "ultrafast",
+                "-an",
+                sec_ts
+            ])
+            _run_ffmpeg(cmd, temp_dir)
+            concat_list.append(f"file '{os.path.basename(sec_ts)}'")
                 
         # 3. 아웃트로 (구독 유도) 컷 추가 (3초)
         print("  -> 아웃트로 컷 렌더링 중...")
@@ -668,10 +683,10 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
             except Exception as e:
                 print(f"아웃트로 그라데이션 처리 실패(원본 그대로 사용): {e}")
                 graded_summary = summary_photo
-            _run_ffmpeg(["ffmpeg", "-y", "-loop", "1", "-i", graded_summary, "-i", cta_png, "-t", "3.0", "-filter_complex", "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", outro_ts], temp_dir)
+            _run_ffmpeg(["ffmpeg", "-y", "-loop", "1", "-i", graded_summary, "-i", cta_png, "-t", "3.0", "-filter_complex", "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24,fade=t=in:st=0:d=0.25[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", "-an", outro_ts], temp_dir)
         else:
-            _run_ffmpeg(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=#0a0a1e:s=1080x1920:d=3.0:r=24", "-i", cta_png, "-filter_complex", "[0:v][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", outro_ts], temp_dir)
-        concat_list.append(f"file 'chunk_outro.ts'")
+            _run_ffmpeg(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=#0a0a1e:s=1080x1920:d=3.0:r=24", "-i", cta_png, "-filter_complex", "[0:v]fade=t=in:st=0:d=0.25[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", "-an", outro_ts], temp_dir)
+        concat_list.append(f"file '{os.path.basename(outro_ts)}'")
             
         print("  -> 비디오 합치기(Concat) 및 오디오 병합 중...")
         concat_txt_path = os.path.join(temp_dir, "concat.txt")
@@ -682,7 +697,7 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
         _run_ffmpeg(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_txt_path, "-c", "copy", raw_video_ts], temp_dir)
         
         output_path = os.path.join(daily_dir, "final_shorts.mp4")
-        _run_ffmpeg(["ffmpeg", "-y", "-i", raw_video_ts, "-i", raw_audio_path, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", output_path], temp_dir)
+        _run_ffmpeg(["ffmpeg", "-y", "-i", raw_video_ts, "-i", raw_audio_path, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", output_path], temp_dir)
         
         print(f"영상 렌더링 완료: {output_path}")
         return output_path
