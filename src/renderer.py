@@ -7,6 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 from moviepy.editor import AudioFileClip, CompositeAudioClip
 from moviepy.audio.fx.all import audio_fadeout, audio_loop
 import sys
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 import text_render
@@ -374,8 +375,8 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
         font40 = ImageFont.truetype(font_path, 40)
         font58 = ImageFont.truetype(font_path, 58)
         font_badge = ImageFont.truetype(font_path, 30)
-        font_why_title = ImageFont.truetype(font_path, 34)
-        font_why_desc = ImageFont.truetype(font_path, 31)
+        font_why_title = ImageFont.truetype(font_path, 42)
+        font_why_desc = ImageFont.truetype(font_path, 40)
 
         # 1. 상단 헤더 (날짜 및 브리핑)
         h_bbox = c_draw.textbbox((0, 0), header_str, font=font40)
@@ -415,9 +416,9 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
         main_w = c_bbox[2] - c_bbox[0]
         main_h = c_bbox[3] - c_bbox[1]
 
-        # 1줄일 때 Y=830, 2줄일 때 Y=760으로 배치하여 하단 블록과의 전체 밸런스 유지
+        # 1줄일 때 Y=670, 2줄일 때 Y=580으로 상향 배치하여 배경 피사체 가림 방지 및 황금비율 유지
         lines_count = len(main_title.split("\n"))
-        main_y = 830 if lines_count == 1 else 760
+        main_y = 670 if lines_count == 1 else 580
         main_x = (1080 - main_w) / 2
         c_draw.multiline_text(
             (main_x, main_y),
@@ -427,22 +428,22 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
         main_bottom = main_y + main_h
 
         # 4. "왜 지금 이 상식?" + 설명 블록: 메인 타이틀 하단에 유동적으로 배치
-        # 메인 타이틀 끝나는 지점(main_bottom)에서 여유로운 간격(gap=75px)을 두고 시작
+        # 메인 타이틀 끝나는 지점(main_bottom)에서 여유로운 간격(gap=60px)을 두고 시작
         if news_context:
-            gap_after_title = 75
+            gap_after_title = 60
             why_label_y = main_bottom + gap_after_title
 
             label = "오늘 알아야 할 이유"
             l_bbox = c_draw.textbbox((0, 0), label, font=font_why_title)
             c_draw.text(((1080 - (l_bbox[2] - l_bbox[0])) / 2, why_label_y), label, font=font_why_title, fill='#38BDF8', stroke_width=2, stroke_fill='black')
 
-            desc_gap = 48
-            news_text = text_render.fit_to_lines(c_draw, news_context, font_why_desc, max_width=920, max_lines=2)
-            n_bbox = c_draw.multiline_textbbox((0, 0), news_text, font=font_why_desc, spacing=8)
+            desc_gap = 56
+            news_text = text_render.fit_to_lines(c_draw, news_context, font_why_desc, max_width=920, max_lines=3)
+            n_bbox = c_draw.multiline_textbbox((0, 0), news_text, font=font_why_desc, spacing=12)
             c_draw.multiline_text(
                 ((1080 - (n_bbox[2] - n_bbox[0])) / 2, why_label_y + desc_gap),
-                news_text, font=font_why_desc, fill=(255, 255, 255, 235),
-                align='center', spacing=8, stroke_width=2, stroke_fill='black'
+                news_text, font=font_why_desc, fill=(255, 255, 255, 245),
+                align='center', spacing=12, stroke_width=2.5, stroke_fill='black'
             )
         c_img.save(bg_png)
 
@@ -588,9 +589,9 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
         summary_takeaway = text_render.sanitize(summary_takeaway, font_path)
 
         card_w = 960
-        card_h = 440
+        card_h = 450
         card_x = (1080 - card_w) / 2
-        card_y = 570
+        card_y = 430
         cta_draw.rounded_rectangle(
             [card_x, card_y, card_x + card_w, card_y + card_h],
             radius=28, fill=(10, 15, 28, 175), outline=(255, 255, 255, 55), width=2
