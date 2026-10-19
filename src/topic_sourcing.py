@@ -11,12 +11,15 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 from scraper import get_naver_headlines
 
-def get_todays_topic(daily_dir=None, reference_date=None):
+def get_todays_topic(daily_dir=None, reference_date=None, target_category=None):
     """네이버 뉴스를 크롤링한 후, Vertex AI가 그 내용을 바탕으로 오늘의 상식 주제를 선정한다."""
     if daily_dir is None:
         daily_dir = config.DATA_DIR
     if reference_date is None:
         reference_date = datetime.now(ZoneInfo("Asia/Seoul")).date()
+    elif isinstance(reference_date, str):
+        clean_date = reference_date.replace("-", "").strip()
+        reference_date = datetime.strptime(clean_date, "%Y%m%d").date()
 
     date_text = reference_date.strftime("%Y년 %m월 %d일")
     
@@ -56,6 +59,10 @@ def get_todays_topic(daily_dir=None, reference_date=None):
         location=config.GCP_LOCATION,
     )
     
+    cat_instruction = ""
+    if target_category:
+        cat_instruction = f"\n[필수 지정 카테고리]: 이번 영상은 반드시 '{target_category}' 분야에 관련된 상식 주제를 선정하세요. (category 필드는 반드시 '{target_category}'로 지정)\n"
+
     prompt = f"""
 기준 날짜: {date_text} (한국 표준시 KST, UTC+09:00)
 
@@ -63,10 +70,10 @@ def get_todays_topic(daily_dir=None, reference_date=None):
 아래 제공된 [오늘의 주요 뉴스 목록]을 꼼꼼히 읽어보고, 오늘 대중들이 이 이슈를 이해하기 위해 가장 필요로 하는 핵심 상식이나 개념을 단 하나만 선정하세요.
 {used_topics_context}
 {news_context}
-
+{cat_instruction}
 [당신의 역할 및 선정 기준]
 1. 단순히 기사의 제목이나 단기 사건을 요약해서는 안 됩니다.
-2. 현재 뉴스를 계기로 사람들이 가장 궁금해할 만한 과학 원리, 역사적 배경, 경제 개념, 사회 현상, 문화의 유래를 고르세요.
+2. 현재 뉴스를 계기로 사람들이 가장 궁금해할 만한 과학 원리, 기술 발전, 역사적 배경, 경제 개념, 사회 현상, 문화의 유래, 생활 속 상식, 우주 현상, 의료·건강 지식, 환경 이슈를 고르세요.
 3. 예시: 한은 기준금리 동결 뉴스가 있다면 -> '금리와 환율의 상관관계 원리' 를 선정
 4. 시청자가 제목만 보고도 호기심을 느낄 수 있도록 매력적인 상식 개념을 도출하세요.
 5. 1분 안에 하나의 개념을 정확히 설명할 수 있도록 주제를 너무 넓지 않게 구체화하세요.
@@ -75,8 +82,8 @@ def get_todays_topic(daily_dir=None, reference_date=None):
 반드시 아래 JSON만 출력하세요.
 {{
   "topic": "선정한 짧은 상식 주제",
-  "category": "과학, 역사, 경제, 사회, 문화, 생활 중 하나",
-  "why_today": "제공된 뉴스와 연관지어, 왜 지금 이 상식에 관심을 가질 만한지 설명",
+  "category": "{target_category if target_category else '과학, 기술, 역사, 경제, 사회, 문화, 생활, 우주, 의료, 환경 중 하나 (반드시 이 10개 중 정확히 하나만 지정)'}",
+  "why_today": "오늘 뉴스와 이 주제가 어떻게 연결되는지 설명. 60~90자의 한 문장으로, 특정 인물의 주장이나 격앙을 반복하지 말고 중립적인 설명형 문장으로 작성.",
   "knowledge_angle": "1분 동안 설명할 핵심 원리 또는 배경",
   "confidence": 0.0
 }}
@@ -91,6 +98,19 @@ def get_todays_topic(daily_dir=None, reference_date=None):
         topic = selection.get("topic", "").strip()
         if not topic:
             raise ValueError("Vertex AI가 주제를 반환하지 않았습니다.")
+
+        # 10대 카테고리 매핑 및 정규화
+        VALID_CATEGORIES = ["과학", "기술", "역사", "경제", "사회", "문화", "생활", "우주", "의료", "환경"]
+        if target_category and target_category in VALID_CATEGORIES:
+            selection["category"] = target_category
+        else:
+            raw_cat = selection.get("category", "").strip()
+            matched_cat = None
+            for vc in VALID_CATEGORIES:
+                if vc in raw_cat:
+                    matched_cat = vc
+                    break
+            selection["category"] = matched_cat if matched_cat else "사회"
 
         selection["reference_date"] = reference_date.isoformat()
         selection["selected_at"] = datetime.now(ZoneInfo("Asia/Seoul")).isoformat()

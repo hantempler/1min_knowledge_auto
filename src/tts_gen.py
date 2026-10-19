@@ -22,6 +22,10 @@ def clean_narration(text: str) -> str:
     text = re.sub(r"[‘’'`\"]", "", text)
     text = re.sub(r"[^\w\s.,!?가-힣a-zA-Z0-9]", " ", text)
     text = re.sub(r"(?<=\d)\s+(?=(억|조|만|천|백|십|원|층|개|명)\b)", "", text)
+    # 조사(은/는/이/가/을/를/의/로/에/와/과/도/만) 뒤의 불필요한 쉼표 제거 (한 호흡 자연 낭독)
+    text = re.sub(r'([은는이가을를의로에와과도만])\s*,\s*', r'\1 ', text)
+    # 짧은 접속부사 뒤의 불필요한 쉼표 제거
+    text = re.sub(r'\b(결국|또한|따라서|한편|하지만|다만|이처럼|그렇다면|물론)\s*,\s*', r'\1 ', text)
     text = re.sub(r"\s+([.,!?])", r"\1", text)
     text = re.sub(r"\s+", " ", text).strip()
     return text
@@ -38,7 +42,10 @@ def build_ssml(section_texts: list[str]) -> str:
             speech_parts.append(f'<prosody rate="{rate}">')
             for sentence in sentences:
                 if sentence.strip():
-                    speech_parts.append(escape(sentence.strip()))
+                    escaped = escape(sentence.strip())
+                    # 절 연결 쉼표는 쉼표 기호 대신 100ms 마이크로 브레이크로 변환해 자연스러운 숨고르기 부여
+                    ssml_sentence = re.sub(r",\s*", '<break time="100ms"/> ', escaped)
+                    speech_parts.append(ssml_sentence)
                     speech_parts.append('<break time="180ms"/>')
             speech_parts.append("</prosody>")
             speech_parts.append('<break time="500ms"/>')
@@ -46,12 +53,14 @@ def build_ssml(section_texts: list[str]) -> str:
     return "".join(speech_parts)
 
 
-def _tts_client_parts():
+def _tts_client_parts(category: str = None):
     from google.cloud import texttospeech
     client = texttospeech.TextToSpeechClient()
+    voice_name = getattr(config, "CATEGORY_VOICE_MAP", {}).get(category, getattr(config, "DEFAULT_VOICE_NAME", "ko-KR-Neural2-C"))
+    print(f"  -> TTS 전담 성우: {voice_name} (카테고리: {category or '기본'})")
     voice = texttospeech.VoiceSelectionParams(
         language_code="ko-KR",
-        name="ko-KR-Neural2-C"
+        name=voice_name
     )
     audio_config = texttospeech.AudioConfig(
         audio_encoding=texttospeech.AudioEncoding.MP3,
@@ -92,7 +101,18 @@ def generate_tts_per_section(script_data: dict, daily_dir: str = None):
         if not any(section_texts):
             raise ValueError("읽을 대본이 없습니다.")
 
-        client, voice, audio_config = _tts_client_parts()
+        # 카테고리 정보 추출 (대본 또는 0_topic_selection.json)
+        category = script_data.get("category", "")
+        if not category and daily_dir:
+            try:
+                topic_file = os.path.join(daily_dir, "0_topic_selection.json")
+                if os.path.exists(topic_file):
+                    with open(topic_file, "r", encoding="utf-8") as f:
+                        category = _json.load(f).get("category", "")
+            except Exception:
+                pass
+
+        client, voice, audio_config = _tts_client_parts(category)
         tmp_dir = os.path.join(daily_dir, "temp_tts")
         os.makedirs(tmp_dir, exist_ok=True)
 

@@ -19,12 +19,12 @@ from tts_gen import generate_tts_per_section
 from renderer import render_video
 from upload_youtube import upload_video
 
-def _run_pipeline():
+def _run_pipeline(target_date_str=None, skip_upload=False, target_category=None):
     print("=== 1분 상식 브리핑 파이프라인 시작 (다이내믹 에디션 v2) ===")
     
     # 0. 작업 폴더 생성
-    daily_dir = config.get_daily_dir()
-    print(f"\n[0/5] 오늘자 작업 폴더 준비: {daily_dir}")
+    daily_dir = config.get_daily_dir(target_date_str)
+    print(f"\n[0/5] 작업 폴더 준비: {daily_dir}")
     
     # 1. 주제 선정
     topic_file = os.path.join(daily_dir, "0_topic_selection.json")
@@ -34,7 +34,7 @@ def _run_pipeline():
             topic = json.load(f).get("topic")
     else:
         print("\n[1/8] 최신 정세 기반 주제 선정 중...")
-        topic = get_todays_topic(daily_dir)
+        topic = get_todays_topic(daily_dir, reference_date=target_date_str, target_category=target_category)
         
     print(f"-> 오늘의 주제: {topic}")
     if not topic:
@@ -123,7 +123,7 @@ def _run_pipeline():
             except Exception as e:
                 print(f"구간 길이 파일 읽기 실패(글자수 비례로 대체): {e}")
     else:
-        print("\n[5/8] AI 성우 음성(TTS) 생성 중 (구간별 합성, Neural2-C 엔진)...")
+        print("\n[5/8] AI 성우 음성(TTS) 생성 중 (구간별 합성, 10대 카테고리 전담 성우)...")
         audio_path, section_durations = generate_tts_per_section(script_data, daily_dir)
 
     if not audio_path:
@@ -139,6 +139,11 @@ def _run_pipeline():
     if not video_path:
         raise RuntimeError("영상 렌더링 실패. 파이프라인을 중단합니다.")
         
+    if skip_upload:
+        print(f"\n[8/8] (업로드 건너뜀) 로컬 영상 렌더링 완료: {video_path}")
+        print("\n=== 파이프라인 완료 ===")
+        return video_path
+
     # 8. 유튜브 업로드 (OAuth 연동)
     print("\n[8/8] 유튜브 쇼츠 자동 업로드 중 (비공개 상태로 업로드)...")
     cover_title = script_data.get("cover_title", topic)
@@ -168,11 +173,19 @@ def _run_pipeline():
         print(f"업로드 주소: {upload_url}")
     else:
         raise RuntimeError("업로드 실패 또는 주소를 받아오지 못했습니다.")
+    return video_path
 
 
 def main():
     """실행 로그(pipeline.log)와 결과 요약(pipeline_run.json)을 남기는 진입점."""
-    daily_dir = config.get_daily_dir()
+    import argparse
+    parser = argparse.ArgumentParser(description="1분 상식 브리핑 쇼츠 생성 파이프라인")
+    parser.add_argument("--date", type=str, default=None, help="생성 기준 날짜 (YYYY-MM-DD 또는 YYYYMMDD)")
+    parser.add_argument("--category", type=str, default=None, help="타겟 카테고리 (경제, 기술, 생활 등)")
+    parser.add_argument("--skip-upload", action="store_true", help="유튜브 업로드를 건너뛰고 영상만 렌더링")
+    args = parser.parse_args()
+
+    daily_dir = config.get_daily_dir(args.date)
     log_path = os.path.join(daily_dir, "pipeline.log")
     logging.basicConfig(
         level=logging.INFO,
@@ -183,10 +196,16 @@ def main():
         ],
         force=True,
     )
-    run_state = {"status": "running", "log_file": log_path}
+    run_state = {
+        "status": "running",
+        "log_file": log_path,
+        "target_date": args.date,
+        "category": args.category,
+        "skip_upload": args.skip_upload
+    }
     start = time.time()
     try:
-        _run_pipeline()
+        _run_pipeline(target_date_str=args.date, skip_upload=args.skip_upload, target_category=args.category)
         run_state["status"] = "done"
     except Exception:
         logging.exception("파이프라인 예외 발생")

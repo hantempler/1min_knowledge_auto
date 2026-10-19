@@ -12,14 +12,16 @@ def generate_script(topic: str, daily_dir: str = None, research_brief: dict = No
         
     client = genai.Client(vertexai=True, project=config.GCP_PROJECT_ID, location=config.GCP_LOCATION)
     
-    # 주제 선정 배경(why_today) 읽어오기
+    # 주제 선정 배경(why_today) 및 카테고리(category) 읽어오기
     why_today = ""
+    category = ""
     topic_file = os.path.join(daily_dir, "0_topic_selection.json")
     if os.path.exists(topic_file):
         try:
             with open(topic_file, "r", encoding="utf-8") as f:
                 topic_data = json.load(f)
                 why_today = topic_data.get("why_today", "")
+                category = topic_data.get("category", "")
         except Exception as e:
             print(f"주제 선정 데이터 읽기 실패: {e}")
             
@@ -60,8 +62,11 @@ def generate_script(topic: str, daily_dir: str = None, research_brief: dict = No
 4. 내용 구성: 단순 꿀팁이 아니라 시청자에게 명확한 '지식(교양, 원리, 유래 등)'을 하나 전달해야 해.
 5. `useful_source_title`: 시청자가 이 상식을 더 깊이 알아볼 수 있는 실제 출처. 뉴스가 출처인 경우, 단순히 '네이버 뉴스 헤드라인'이 아니라 실제 '뉴스 기사의 제목'을 작성해. (예: '한국은행 경제용어사전', '구체적인 기사 제목')
 6. `useful_source_url`: 위 소스에 대한 안내나 실제 URL. 뉴스가 출처인 경우, 포털 메인 주소(예: https://news.naver.com)가 아니라 해당 기사의 '실제 구체적인 URL(직접 링크)'을 제공해.
-7. `cover_keyword`: 표지 사진 검색용 영어 키워드 2~4단어. 주제를 상징하는 구체적인 사물이나 장면(예: scales of justice closeup, courthouse exterior). 추상 개념명 금지, 인물 얼굴 클로즈업이 될 만한 표현 금지.
+7. `cover_keyword`: 표지 사진 검색용 영어 키워드 2~4단어. 주제를 상징하는 구체적인 사물이나 장면(예: scales of justice closeup, courthouse exterior). 추상 개념명 금지, 인물 얼굴 클로즈업이 될 만한 표현 금지. 반드시 '사물·건물·자연·문서'처럼 화면에 사물이 비치는 키워드를 쓰고, 사람이나 인체 부위(person, woman, man, face, hand, crowd)는 포함하지 마.
 8. `summary_keyword`: 마무리 화면 사진 검색용 영어 키워드 2~4단어. 7번과 같은 규칙을 따른다.
+9. `summary_takeaway`: 시청자가 영상 끝 아웃트로에서 기억해야 할 2~3줄 분량의 핵심 결론 요약문(공백 포함 40~75자 내외). 오늘 다룬 지식의 핵심 원리나 교훈을 깔끔하게 요약해.
+10. 모든 텍스트 필드에는 이모지나 특수기호(🚀, ✅, 💡 등)를 절대 쓰지 마. 화면 렌더링에서 깨진 글자로 표시될 수 있어, 한글이나 숫자, 일반 문장부호만 사용해야 해.
+11. 대본 `narration`은 뉴스 앵커나 전문 성우가 한 호흡으로 유려하게 낭독할 구어체로 작성해. 조사(은/는/이/가/을/를/의) 뒤나 짧은 접속부사(결국, 따라서, 한편, 또한) 뒤에는 쉼표(,)를 절대 찍지 마. 쉼표는 문맥상 꼭 필요한 대조나 조건절에서만 컷당 최대 1개 이하로 최소화해.
 
 JSON 포맷 예시:
 {{
@@ -72,6 +77,7 @@ JSON 포맷 예시:
         {{"narration": "수요가 둔화되면 물가 상승 압력도 약해집니다.", "caption": "수요 둔화와 물가 상승 압력", "bg_keyword": "price chart"}},
         {{"narration": "따라서 빅스텝은 물가를 안정시키는 수단이지만, 경기 둔화라는 비용을 동반할 수 있습니다.", "caption": "물가 안정과 경기 둔화의 양면성", "bg_keyword": "economic chart"}}
     ],
+    "summary_takeaway": "빅스텝은 경기 둔화의 위험을 감수하고도 물가 안정을 위해 단행하는 강력한 통화정책입니다.",
     "useful_source_title": "한국은행 경제용어사전",
     "useful_source_url": "검색창에 '한국은행 경제용어사전'을 검색하면 700개가 넘는 용어를 쉽게 볼 수 있어요!"
 }}
@@ -87,6 +93,8 @@ JSON 포맷 예시:
         # Pydantic/JSON parsing
         result = json.loads(response.text.strip())
         result["topic"] = topic
+        if category:
+            result["category"] = category
         sections = result.get("script_sections", [])
         if not 4 <= len(sections) <= 5:
             raise ValueError("script_sections는 4~5개여야 합니다.")
