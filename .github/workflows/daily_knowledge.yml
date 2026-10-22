@@ -61,8 +61,10 @@ jobs:
           mkdir -p config
           echo "$YOUTUBE_TOKEN" > config/youtube_token.json
 
-      - name: Install FFmpeg and Fonts
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-noto-cjk
+      - name: Set up FFmpeg
+        uses: FedericoCarboni/setup-ffmpeg@v3
+        with:
+          ffmpeg-version: 'release'
 
       - name: Run Pipeline
         uses: nick-fields/retry@v3
