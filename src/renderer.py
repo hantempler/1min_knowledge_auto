@@ -524,7 +524,8 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
                     font_sub = ImageFont.load_default()
                     
                 def _fit(chunk_value, font_obj):
-                    wrapped = text_render.wrap_text(o_draw, chunk_value, font_obj, 980)
+                    clean_chunk = text_render.sanitize(chunk_value, font_path)
+                    wrapped = text_render.wrap_text(o_draw, clean_chunk, font_obj, 980)
                     bbox = o_draw.multiline_textbbox((0, 0), wrapped, font=font_obj, spacing=10)
                     return wrapped, bbox, bbox[2] - bbox[0]
 
