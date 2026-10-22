@@ -262,5 +262,11 @@
     "slot": "evening",
     "category": "우주",
     "topic": "우주에 맨몸으로 던져지면 인간은 터져 죽을까?"
+  },
+  {
+    "date": "2026-10-23",
+    "slot": "morning",
+    "category": "경제",
+    "topic": "서울 집값 멈추지 않는 진짜 이유!"
   }
 ]
