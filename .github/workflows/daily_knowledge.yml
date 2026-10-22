@@ -64,7 +64,7 @@ jobs:
       - name: Set up FFmpeg
         uses: FedericoCarboni/setup-ffmpeg@v3
         with:
-          ffmpeg-version: 'release'
+          ffmpeg-version: '6.1.1'
 
       - name: Run Pipeline
         uses: nick-fields/retry@v3

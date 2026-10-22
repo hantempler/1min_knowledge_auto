@@ -466,10 +466,9 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
                     graded.convert("RGB").save(graded_photo, quality=92)
             except Exception as e:
                 print(f"표지 그라데이션 처리 실패(원본 그대로 사용): {e}")
-                graded_photo = cover_photo
-            _run_ffmpeg(["ffmpeg", "-y", "-loop", "1", "-i", graded_photo, "-i", bg_png, "-t", "3.0", "-filter_complex", "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24,fade=t=out:st=2.75:d=0.25[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", "-an", intro_ts], temp_dir)
+            _run_ffmpeg(["ffmpeg", "-y", "-loop", "1", "-i", graded_photo, "-i", bg_png, "-t", "3.0", "-filter_complex", "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24,format=yuv420p,fade=t=out:st=2.75:d=0.25[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-profile:v", "high", "-level", "4.0", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-an", intro_ts], temp_dir)
         else:
-            _run_ffmpeg(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=#141432:s=1080x1920:d=3.0:r=24", "-i", bg_png, "-filter_complex", "[0:v]fade=t=out:st=2.75:d=0.25[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", "-an", intro_ts], temp_dir)
+            _run_ffmpeg(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=#141432:s=1080x1920:d=3.0:r=24", "-i", bg_png, "-filter_complex", "[0:v]format=yuv420p,fade=t=out:st=2.75:d=0.25[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-profile:v", "high", "-level", "4.0", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-an", intro_ts], temp_dir)
         concat_list.append(f"file 'chunk_intro.ts'")
         
         # 2. 본문 컷
@@ -500,7 +499,7 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
                 cmd.extend(["-f", "lavfi", "-i", f"color=c=#323232:s=1080x1920:d={sec_duration}:r=24"])
                 
             fade_filter = f"fade=t=in:st=0:d=0.25,fade=t=out:st={max(0, sec_duration - 0.25):.3f}:d=0.25"
-            filter_parts = [f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24,{fade_filter}[bg]"]
+            filter_parts = [f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24,format=yuv420p,{fade_filter}[bg]"]
             last_v = "bg"
             
             curr_t = 0.0
@@ -551,6 +550,8 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
                 "-filter_complex", ";".join(filter_parts),
                 "-map", f"[{last_v}]",
                 "-c:v", "libx264",
+                "-profile:v", "high", "-level", "4.0",
+                "-pix_fmt", "yuv420p",
                 "-preset", "ultrafast",
                 "-an",
                 sec_ts
@@ -691,9 +692,9 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
             except Exception as e:
                 print(f"아웃트로 그라데이션 처리 실패(원본 그대로 사용): {e}")
                 graded_summary = summary_photo
-            _run_ffmpeg(["ffmpeg", "-y", "-loop", "1", "-i", graded_summary, "-i", cta_png, "-t", "3.0", "-filter_complex", "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24,fade=t=in:st=0:d=0.25[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", "-an", outro_ts], temp_dir)
+            _run_ffmpeg(["ffmpeg", "-y", "-loop", "1", "-i", graded_summary, "-i", cta_png, "-t", "3.0", "-filter_complex", "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24,format=yuv420p,fade=t=in:st=0:d=0.25[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-profile:v", "high", "-level", "4.0", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-an", outro_ts], temp_dir)
         else:
-            _run_ffmpeg(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=#0a0a1e:s=1080x1920:d=3.0:r=24", "-i", cta_png, "-filter_complex", "[0:v]fade=t=in:st=0:d=0.25[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-preset", "ultrafast", "-an", outro_ts], temp_dir)
+            _run_ffmpeg(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=#0a0a1e:s=1080x1920:d=3.0:r=24", "-i", cta_png, "-filter_complex", "[0:v]format=yuv420p,fade=t=in:st=0:d=0.25[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-profile:v", "high", "-level", "4.0", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-an", outro_ts], temp_dir)
         concat_list.append(f"file '{os.path.basename(outro_ts)}'")
             
         print("  -> 비디오 합치기(Concat) 및 오디오 병합 중...")
@@ -702,10 +703,25 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
             f.write("\n".join(concat_list))
             
         raw_video_ts = os.path.join(temp_dir, "raw_video.ts")
-        _run_ffmpeg(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_txt_path, "-c", "copy", raw_video_ts], temp_dir)
-        
         output_path = os.path.join(daily_dir, "final_shorts.mp4")
-        _run_ffmpeg(["ffmpeg", "-y", "-i", raw_video_ts, "-i", raw_audio_path, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", output_path], temp_dir)
+
+        # 1차 시도: 규격화된 TS 파일 무손실 Concat 스트림 복사
+        try:
+            _run_ffmpeg(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_txt_path, "-c", "copy", raw_video_ts], temp_dir)
+            _run_ffmpeg(["ffmpeg", "-y", "-i", raw_video_ts, "-i", raw_audio_path, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", output_path], temp_dir)
+        except Exception as copy_err:
+            print(f"경고: 무손실 복사 병합 실패 ({copy_err}). 2차 안전 재인코딩 병합(Fallback) 진행...")
+            # 2차 방어: 스트림 복사 실패 시 재인코딩으로 직접 final_shorts.mp4 합성
+            _run_ffmpeg([
+                "ffmpeg", "-y",
+                "-f", "concat", "-safe", "0", "-i", concat_txt_path,
+                "-i", raw_audio_path,
+                "-map", "0:v:0", "-map", "1:a:0",
+                "-c:v", "libx264", "-profile:v", "high", "-level", "4.0", "-pix_fmt", "yuv420p", "-preset", "ultrafast",
+                "-c:a", "aac", "-b:a", "192k",
+                "-movflags", "+faststart",
+                output_path
+            ], temp_dir)
         
         print(f"영상 렌더링 완료: {output_path}")
         return output_path
