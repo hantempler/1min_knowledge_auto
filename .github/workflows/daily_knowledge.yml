@@ -36,6 +36,11 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install system ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
@@ -61,12 +66,6 @@ jobs:
           mkdir -p config
           echo "$YOUTUBE_TOKEN" > config/youtube_token.json
 
-      - name: Install system ffmpeg
-        run: |
-          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
-          sudo sed -i 's|azure.archive.ubuntu.com|archive.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
 
       - name: Run Pipeline
         uses: nick-fields/retry@v3
