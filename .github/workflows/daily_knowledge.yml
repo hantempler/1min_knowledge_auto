@@ -61,10 +61,12 @@ jobs:
           mkdir -p config
           echo "$YOUTUBE_TOKEN" > config/youtube_token.json
 
-      - name: Install FFmpeg
+      - name: Install system ffmpeg
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends ffmpeg
+          echo 'Acquire::ForceIPv4 "true";' | sudo tee /etc/apt/apt.conf.d/99force-ipv4
+          sudo sed -i 's|azure.archive.ubuntu.com|archive.ubuntu.com|g' /etc/apt/sources.list /etc/apt/sources.list.d/*.sources 2>/dev/null || true
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
 
       - name: Run Pipeline
         uses: nick-fields/retry@v3
