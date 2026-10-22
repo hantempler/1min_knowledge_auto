@@ -72,47 +72,9 @@ def get_naver_headlines():
         except Exception as e:
             print(f"    [{category}] 스크래핑 실패: {e}")
 
-    # 스포츠 및 연예 (Google News RSS - 최근 12시간 이내 뉴스만 수집)
-    for cat, query in [("스포츠", "스포츠+뉴스+when:12h"), ("연예", "연예+뉴스+when:12h")]:
-        try:
-            rss_url = f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko"
-            r_res = requests.get(rss_url, headers=headers, timeout=8)
-            try:
-                r_soup = BeautifulSoup(r_res.text, "xml")
-            except Exception:
-                r_soup = BeautifulSoup(r_res.text, "html.parser")
-            item = r_soup.find("item")
-            if item:
-                title_text = item.title.text if item.title else ""
-                link = item.link.text if item.link else ""
-                
-                # 이미지 추출 시도
-                image_url = ""
-                try:
-                    art_res = requests.get(link, headers=headers, timeout=5)
-                    art_soup = BeautifulSoup(art_res.text, "html.parser")
-                    og_image = art_soup.select_one('meta[property="og:image"]')
-                    if og_image and og_image.get('content'):
-                        image_url = og_image['content']
-                except:
-                    pass
-                
-                news_data.append({
-                    "category": cat,
-                    "title": title_text,
-                    "content": title_text,
-                    "image_url": image_url,
-                    "url": link
-                })
-                print(f"    [{cat}] 성공: {title_text}")
-            else:
-                print(f"    [{cat}] 결과 없음")
-        except Exception as e:
-            print(f"    [{cat}] 스크래핑 실패: {e}")
-
     # 날씨 데이터 추가
     try:
-        weather_res = requests.get("https://search.naver.com/search.naver?query=전국+내일+날씨", headers=headers)
+        weather_res = requests.get("https://search.naver.com/search.naver?query=전국+내일+날씨", headers=headers, timeout=5)
         w_soup = BeautifulSoup(weather_res.text, "html.parser")
         w_info = w_soup.select_one('.api_subject_bx')
         weather_text = w_info.text[:500] if w_info else "내일 전국은 맑고 일교차가 클 것으로 예상됩니다."
@@ -132,26 +94,26 @@ def get_naver_headlines():
 
 
 def get_am_news_data():
-    """오전(AM): 실생활·경제·시사 팩트 주제 발굴을 위해 경제/사회/IT 중심 뉴스 수집"""
-    print("  -> [오전/AM] 실생활·경제·시사 뉴스 수집 중...")
+    """오전(AM): 실생활·경제·생활문화 팩트 주제 발굴을 위해 네이버 주요 섹션 뉴스 수집"""
+    print("  -> [오전/AM] 실생활·경제·생활문화 뉴스 수집 중...")
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
     am_data = []
     
-    # 1. 네이버 경제, 사회, IT 분야의 주요 기사 다수 수집
+    # 네이버 실생활 밀착 섹션: 경제(101), 사회(102), 생활/문화(103)
     sections = {
         "경제": "101",
         "사회": "102",
-        "IT/과학": "105"
+        "생활/문화": "103"
     }
     for category, sid in sections.items():
         url = f"https://news.naver.com/section/{sid}"
         try:
-            res = requests.get(url, headers=headers, timeout=8)
+            res = requests.get(url, headers=headers, timeout=5)
             if res.status_code == 200:
                 soup = BeautifulSoup(res.text, "html.parser")
-                titles = soup.select('.sa_text_title')[:3]  # 상위 3개씩 수집
+                titles = soup.select('.sa_text_title')[:4]  # 각 섹션 상위 4개씩 수집
                 for t in titles:
                     text = t.text.strip()
                     href = t.get('href', '')
@@ -165,50 +127,26 @@ def get_am_news_data():
         except Exception as e:
             print(f"    [{category}] AM 수집 오류: {e}")
 
-    # 2. 구글 뉴스 경제/재테크/생활 트렌드 보강
-    queries = [
-        ("경제", "기준금리+환율+부동산+물가+when:1d"),
-        ("생활", "지원금+제도+세금+건강보험+when:2d"),
-        ("테크", "스마트폰+AI+신기술+when:2d")
-    ]
-    for cat, query in queries:
-        try:
-            rss_url = f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko"
-            r_res = requests.get(rss_url, headers=headers, timeout=8)
-            r_soup = BeautifulSoup(r_res.text, "xml" if "xml" in r_res.text[:100] else "html.parser")
-            for item in r_soup.find_all("item")[:2]:
-                t_elem = item.find("title")
-                l_elem = item.find("link")
-                if t_elem:
-                    am_data.append({
-                        "category": cat,
-                        "title": t_elem.text.strip(),
-                        "content": t_elem.text.strip(),
-                        "url": l_elem.text.strip() if l_elem else ""
-                    })
-        except Exception:
-            pass
-
     if not am_data:
         return get_naver_headlines()
     return am_data
 
 
 def get_pm_viral_data():
-    """오후(PM): 도파민 썰, 상식 파괴, 역사·과학 비하인드 토픽 수집"""
+    """오후(PM): 도파민 썰, 상식 파괴, 역사·과학 비하인드 토픽 수집 (네이버 세계+랭킹+에버그린)"""
     print("  -> [오후/PM] 도파민 썰 & 기상천외 토픽 소스 수집 중...")
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
     pm_data = []
 
     # 1. 네이버 세계 토픽 및 이색 사건
     try:
         url = "https://news.naver.com/section/104"
-        res = requests.get(url, headers=headers, timeout=8)
+        res = requests.get(url, headers=headers, timeout=5)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, "html.parser")
-            for t in soup.select('.sa_text_title')[:4]:
+            for t in soup.select('.sa_text_title')[:5]:
                 txt = t.text.strip()
                 if txt:
                     pm_data.append({
@@ -220,31 +158,27 @@ def get_pm_viral_data():
     except Exception as e:
         print(f"    네이버 세계 섹션 수집 오류: {e}")
 
-    # 2. 구글 뉴스 기상천외 / 미스터리 / 역사 비하인드 검색
-    pm_queries = [
-        ("미스터리", "미스터리+발견+충격+when:7d"),
-        ("역사/사건", "황당+사건+비하인드+when:7d"),
-        ("과학/우주", "우주+블랙홀+신체+비밀+when:7d")
-    ]
-    for cat, query in pm_queries:
-        try:
-            rss_url = f"https://news.google.com/rss/search?q={query}&hl=ko&gl=KR&ceid=KR:ko"
-            r_res = requests.get(rss_url, headers=headers, timeout=8)
-            r_soup = BeautifulSoup(r_res.text, "xml" if "xml" in r_res.text[:100] else "html.parser")
-            for item in r_soup.find_all("item")[:2]:
-                t_elem = item.find("title")
-                l_elem = item.find("link")
-                if t_elem:
+    # 2. 네이버 언론사별 최다 조회 랭킹 뉴스 (대중적 화제성/도파민)
+    try:
+        ranking_url = "https://news.naver.com/main/ranking/popularDay.naver"
+        res = requests.get(ranking_url, headers=headers, timeout=5)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, "html.parser")
+            ranking_items = soup.select(".rankingnews_box .list_title")
+            for item in ranking_items[:6]:
+                txt = item.text.strip()
+                href = item.get('href', '')
+                if txt:
                     pm_data.append({
-                        "category": cat,
-                        "title": t_elem.text.strip(),
-                        "content": t_elem.text.strip(),
-                        "url": l_elem.text.strip() if l_elem else ""
+                        "category": "화제/랭킹",
+                        "title": txt,
+                        "content": txt,
+                        "url": href
                     })
-        except Exception:
-            pass
+    except Exception as e:
+        print(f"    네이버 랭킹 뉴스 수집 오류: {e}")
 
-    # 3. 만약 실시간 소스가 부족할 경우 시청률 보장 에버그린 도파민 시드 풀 결합
+    # 3. 시청률 보장 에버그린 도파민 시드 풀 결합
     evergreen_pm_seeds = [
         {"category": "역사", "title": "쥐 잡으라고 포상금 줬더니 쥐를 사육해버린 하노이 쥐 덫 사건 (코브라 효과)", "content": "식민지 시절 프랑스가 쥐 꼬리를 가져오면 돈을 주자 사람들이 쥐 농장을 만들어 꼬리만 자르고 방생한 역사적 삽질"},
         {"category": "과학", "title": "만약 인간이 번개에 직격으로 맞으면 신체 내부 혈관에 생기는 일", "content": "리히텐베르크 형상과 적혈구 파괴 등 번개 피격 시 체내에서 벌어지는 기괴한 물리 화학적 현상"},
@@ -264,4 +198,5 @@ if __name__ == "__main__":
     print(json.dumps(get_am_news_data()[:3], ensure_ascii=False, indent=2))
     print("=== PM DATA ===")
     print(json.dumps(get_pm_viral_data()[:3], ensure_ascii=False, indent=2))
+
 
