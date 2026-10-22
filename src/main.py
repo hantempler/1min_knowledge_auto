@@ -31,10 +31,10 @@ from tts_gen import generate_tts_per_section
 from renderer import render_video
 from upload_youtube import upload_video
 
-def _run_pipeline(target_date_str=None, skip_upload=False, target_category=None, slot="morning"):
-    slot_norm = config.normalize_slot(slot)
+def _run_pipeline(target_date_str=None, skip_upload=False, target_category=None, slot="auto"):
+    slot_norm = config.resolve_slot(slot)
     slot_conf = config.SLOT_CONFIG.get(slot_norm, config.SLOT_CONFIG["morning"])
-    print(f"=== 1분 상식 파이프라인 시작 [{slot_conf['header_badge']}] ===")
+    print(f"=== 1분 상식 파이프라인 시작 [{slot_conf['header_badge']} (슬롯: {slot_norm})] ===")
     
     # 0. 작업 폴더 생성 (오전/오후 슬롯 분리)
     daily_dir = config.get_daily_dir(target_date_str, slot=slot_norm)
@@ -199,11 +199,11 @@ def main():
     parser = argparse.ArgumentParser(description="1분 상식 브리핑 쇼츠 생성 파이프라인 (오전/오후 이원화)")
     parser.add_argument("--date", type=str, default=None, help="생성 기준 날짜 (YYYY-MM-DD 또는 YYYYMMDD)")
     parser.add_argument("--category", type=str, default=None, help="타겟 카테고리 (경제, 기술, 생활 등)")
-    parser.add_argument("--slot", type=str, default="morning", choices=["morning", "evening", "am", "pm"], help="발행 슬롯 (morning/am: 오전 1분 팩트, evening/pm: 오후 도파민 썰)")
+    parser.add_argument("--slot", type=str, default="auto", choices=["auto", "morning", "evening", "am", "pm"], help="발행 슬롯 (auto: KST 시간대 자동 감지, morning/am: 오전 1분 팩트, evening/pm: 오후 도파민 썰)")
     parser.add_argument("--skip-upload", action="store_true", help="유튜브 업로드를 건너뛰고 영상만 렌더링")
     args = parser.parse_args()
 
-    norm_slot = config.normalize_slot(args.slot)
+    norm_slot = config.resolve_slot(args.slot)
     daily_dir = config.get_daily_dir(args.date, slot=norm_slot)
     log_path = os.path.join(daily_dir, "pipeline.log")
     logging.basicConfig(

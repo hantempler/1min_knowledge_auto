@@ -2,8 +2,18 @@ name: 1Min Knowledge Generator
 
 on:
   workflow_dispatch:
+    inputs:
+      slot:
+        description: '실행 슬롯 (auto: KST 시간대 자동감지, morning: 오전 1분 팩트, evening: 나이트 도파민 썰)'
+        required: false
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - morning
+          - evening
   repository_dispatch:
-    types: [trigger-1min-knowledge]
+    types: [trigger-1min-knowledge, trigger-1min-morning, trigger-1min-evening]
 
 concurrency:
   group: knowledge-pipeline
@@ -62,7 +72,9 @@ jobs:
           timeout_minutes: 50
           command: |
             echo "Executing 1Min Knowledge Pipeline"
-            python src/main.py
+            SLOT_CHOICE="${{ github.event.inputs.slot || github.event.client_payload.slot || 'auto' }}"
+            echo "Target slot: $SLOT_CHOICE"
+            python src/main.py --slot "$SLOT_CHOICE"
 
       - name: Upload pipeline outputs
         if: always()

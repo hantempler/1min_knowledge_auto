@@ -102,11 +102,25 @@ SLOT_CONFIG = {
 
 
 
+def resolve_slot(slot: str | None = None) -> str:
+    """slot 인자를 검사하고, auto이거나 미지정 시 현재 KST 시간 기준으로 morning/evening 결정"""
+    if not slot or str(slot).lower().strip() in ["auto", "none", ""]:
+        now_kst = datetime.datetime.now(ZoneInfo("Asia/Seoul"))
+        # 04:00 ~ 13:59 KST -> morning (오전 1분 팩트), 14:00 ~ 03:59 KST -> evening (나이트 도파민 썰)
+        if 4 <= now_kst.hour < 14:
+            return "morning"
+        else:
+            return "evening"
+    return normalize_slot(slot)
+
+
 def normalize_slot(slot: str | None) -> str:
     """slot 인자를 morning 또는 evening으로 표준화"""
     if not slot:
         return "morning"
     s = str(slot).lower().strip()
+    if s in ["auto"]:
+        return resolve_slot("auto")
     if s in ["morning", "am", "m"]:
         return "morning"
     if s in ["evening", "pm", "e", "night"]:
