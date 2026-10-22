@@ -1,4 +1,5 @@
 [
+<<<<<<< HEAD
   "노벨상을 안겨준 '유령 입자', 중성미자의 정체는?",
   "우주 로켓은 왜 비행 중에 부품을 떼어낼까? '다단 분리'의 원리",
   "우주 정복의 개미군단, 초소형 위성 '큐브위성'의 정체는?",
@@ -23,4 +24,270 @@
   "태양 증발? 지구 최후의 8분!",
   "쥐 꼬리에 현상금? 대환장 파티의 시작!",
   "폰 속 AI, 나보다 똑똑해진다?"
+=======
+  {
+    "date": "2026-10-01",
+    "slot": "morning",
+    "category": "경제",
+    "topic": "국군의 날 임시공휴일, 내 일당 수당은?"
+  },
+  {
+    "date": "2026-10-01",
+    "slot": "evening",
+    "category": "역사",
+    "topic": "쥐 꼬리에 현상금? 대환장 파티의 시작!"
+  },
+  {
+    "date": "2026-10-02",
+    "slot": "morning",
+    "category": "생활",
+    "topic": "징검다리 연휴 고속도로 통행료 면제 꿀팁"
+  },
+  {
+    "date": "2026-10-02",
+    "slot": "evening",
+    "category": "사회",
+    "topic": "중동 전쟁 터지면 내 기름값은 왜 뛸까?"
+  },
+  {
+    "date": "2026-10-03",
+    "slot": "morning",
+    "category": "문화",
+    "topic": "단군신화 속 곰과 호랑이, 진짜 동물일까?"
+  },
+  {
+    "date": "2026-10-03",
+    "slot": "evening",
+    "category": "과학",
+    "topic": "번개 맞은 인간? 몸속 혈관 터지는 충격 진실!"
+  },
+  {
+    "date": "2026-10-04",
+    "slot": "morning",
+    "category": "경제",
+    "topic": "배달비 4천 원의 진실: 플랫폼 수수료 구조"
+  },
+  {
+    "date": "2026-10-04",
+    "slot": "evening",
+    "category": "역사",
+    "topic": "에펠탑을 고철로 팔아먹은 전설의 사기꾼!"
+  },
+  {
+    "date": "2026-10-05",
+    "slot": "morning",
+    "category": "경제",
+    "topic": "원·달러 1,350원 돌파! 외환당국 개입 원리"
+  },
+  {
+    "date": "2026-10-05",
+    "slot": "evening",
+    "category": "의료",
+    "topic": "물에 빠졌을 때 몸이 기도를 닫는 1분의 비밀"
+  },
+  {
+    "date": "2026-10-06",
+    "slot": "morning",
+    "category": "생활",
+    "topic": "층간소음 복수하면 역고소? 법적 기준 팩트"
+  },
+  {
+    "date": "2026-10-06",
+    "slot": "evening",
+    "category": "기술",
+    "topic": "블라인드 1위? 코카콜라 최악의 실수!"
+  },
+  {
+    "date": "2026-10-07",
+    "slot": "morning",
+    "category": "의료",
+    "topic": "일교차 10도 넘으면 혈관에 생기는 일"
+  },
+  {
+    "date": "2026-10-07",
+    "slot": "evening",
+    "category": "우주",
+    "topic": "태양 증발? 지구 최후의 8분!"
+  },
+  {
+    "date": "2026-10-08",
+    "slot": "morning",
+    "category": "기술",
+    "topic": "2026 노벨상 휩쓴 AI, 물리학과 무슨 상관?"
+  },
+  {
+    "date": "2026-10-08",
+    "slot": "evening",
+    "category": "역사",
+    "topic": "트랙터 타다 빡쳐서 만든 슈퍼카의 전설!"
+  },
+  {
+    "date": "2026-10-09",
+    "slot": "morning",
+    "category": "문화",
+    "topic": "훈민정음 자음은 왜 입술과 혀 모양일까?"
+  },
+  {
+    "date": "2026-10-09",
+    "slot": "evening",
+    "category": "과학",
+    "topic": "바다에서 표류할 때 바닷물 마시면 터지는 일"
+  },
+  {
+    "date": "2026-10-10",
+    "slot": "morning",
+    "category": "사회",
+    "topic": "한강 노벨문학상 쾌거! 번역이 바꾼 기적"
+  },
+  {
+    "date": "2026-10-10",
+    "slot": "evening",
+    "category": "환경",
+    "topic": "지구상 모든 모기가 멸종하면 생태계는?"
+  },
+  {
+    "date": "2026-10-11",
+    "slot": "morning",
+    "category": "경제",
+    "topic": "금리 3.25% 인하! 내 대출이자는 왜 그대로?"
+  },
+  {
+    "date": "2026-10-11",
+    "slot": "evening",
+    "category": "역사",
+    "topic": "꽃 한 송이에 집 한 채? 튤립 파동의 광기"
+  },
+  {
+    "date": "2026-10-12",
+    "slot": "morning",
+    "category": "기술",
+    "topic": "스마트폰 충전, 80% 제한이 수명 2배 비결?"
+  },
+  {
+    "date": "2026-10-12",
+    "slot": "evening",
+    "category": "과학",
+    "topic": "1만 미터 심해어는 왜 수압에 안 찌그러질까?"
+  },
+  {
+    "date": "2026-10-13",
+    "slot": "morning",
+    "category": "생활",
+    "topic": "모바일 청첩장 링크 눌렀더니 통장 털린 이유"
+  },
+  {
+    "date": "2026-10-13",
+    "slot": "evening",
+    "category": "의료",
+    "topic": "런던 지도에 점 찍어 콜레라를 잡은 의사!"
+  },
+  {
+    "date": "2026-10-14",
+    "slot": "morning",
+    "category": "경제",
+    "topic": "주택청약 월 25만 원 상향! 무조건 넣어야 할까?"
+  },
+  {
+    "date": "2026-10-14",
+    "slot": "evening",
+    "category": "과학",
+    "topic": "사막에서 길 잃었을 때 옷 벗으면 죽는다?"
+  },
+  {
+    "date": "2026-10-15",
+    "slot": "morning",
+    "category": "생활",
+    "topic": "술 마신 다음 날 타이레놀 먹으면 간 박살?"
+  },
+  {
+    "date": "2026-10-15",
+    "slot": "evening",
+    "category": "기술",
+    "topic": "70미터 거대 로켓을 젓가락으로 낚아챈 비결"
+  },
+  {
+    "date": "2026-10-16",
+    "slot": "morning",
+    "category": "사회",
+    "topic": "선거 개표 방송 출구조사, 100% 맞을까?"
+  },
+  {
+    "date": "2026-10-16",
+    "slot": "evening",
+    "category": "과학",
+    "topic": "비행기 창문 바닥의 좁쌀 구멍, 왜 뚫어놨을까?"
+  },
+  {
+    "date": "2026-10-17",
+    "slot": "morning",
+    "category": "생활",
+    "topic": "신호 대기 중 기어 N단? 연비 절약의 진실"
+  },
+  {
+    "date": "2026-10-17",
+    "slot": "evening",
+    "category": "우주",
+    "topic": "운석 구덩이도 없이 숲을 날려버린 대폭발의 비밀"
+  },
+  {
+    "date": "2026-10-18",
+    "slot": "morning",
+    "category": "경제",
+    "topic": "10년 지난 항공사 마일리지, 안 쓰면 증발?"
+  },
+  {
+    "date": "2026-10-18",
+    "slot": "evening",
+    "category": "역사",
+    "topic": "수십 톤 모아이 석상이 스스로 걸어갔다고?"
+  },
+  {
+    "date": "2026-10-19",
+    "slot": "morning",
+    "category": "경제",
+    "topic": "로또 1등 20억 당첨! 내 통장에 꽂히는 실령액"
+  },
+  {
+    "date": "2026-10-19",
+    "slot": "evening",
+    "category": "의료",
+    "topic": "자다가 몸이 굳는 가위눌림, 왜 풀리지 않을까?"
+  },
+  {
+    "date": "2026-10-20",
+    "slot": "morning",
+    "category": "생활",
+    "topic": "아파트 이사 갈 때 수십만 원 돌려받는 법!"
+  },
+  {
+    "date": "2026-10-20",
+    "slot": "evening",
+    "category": "기술",
+    "topic": "양자 컴퓨터가 비트코인 암호 1초 만에 깰까?"
+  },
+  {
+    "date": "2026-10-21",
+    "slot": "morning",
+    "category": "경제",
+    "topic": "통장에 300억이 잘못 입금됐다면? 절대 쓰면 안 됨"
+  },
+  {
+    "date": "2026-10-21",
+    "slot": "evening",
+    "category": "환경",
+    "topic": "호주에 토끼 24마리 풀었더니 8억 마리로 불어난 참사"
+  },
+  {
+    "date": "2026-10-22",
+    "slot": "morning",
+    "category": "과학",
+    "topic": "가을 태풍 '참피' 북상! 태풍은 왜 반시계로 돌까?"
+  },
+  {
+    "date": "2026-10-22",
+    "slot": "evening",
+    "category": "우주",
+    "topic": "우주에 맨몸으로 던져지면 인간은 터져 죽을까?"
+  }
+>>>>>>> 486b552 (feat(topic): remove Google News, structure used_topics with 44 balanced entries and category cooldown)
 ]
