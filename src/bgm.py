@@ -23,19 +23,25 @@ def _is_youtube_safe_license(track: dict) -> bool:
     return any(marker in license_url for marker in ALLOWED_LICENSE_MARKERS)
 
 
-def _music_tag(topic: str) -> str:
+def _music_tag(topic: str, slot: str = "morning") -> str:
+    slot_norm = config.normalize_slot(slot)
+    if slot_norm == "evening":
+        # 오후 나이트 도파민 썰: 시네마틱/신스웨이브/서스펜스
+        return random.choice(["cinematic", "synthwave", "soundtrack", "suspense", "electronic"])
+    
+    # 오전 모닝 1분 팩트: 산뜻한 로파이/어쿠스틱/칠아웃
     topic_text = (topic or "").lower()
     if any(word in topic_text for word in ("과학", "의료", "기술", "원리", "우주")):
         return "lofi"
     if any(word in topic_text for word in ("경제", "금리", "물가", "사회")):
         return "chillout"
-    if any(word in topic_text for word in ("역사", "문화", "유래", "추분", "계절")):
+    if any(word in topic_text for word in ("역사", "문화", "유래", "생활")):
         return "acoustic"
     return "piano"
 
 
-def download_bgm(topic: str, output_dir: str = None):
-    """Jamendo에서 편안하고 잔잔한 연주곡 위주의 CC 라이선스 음악을 내려받는다."""
+def download_bgm(topic: str, output_dir: str = None, slot: str = "morning"):
+    """Jamendo에서 슬롯(오전/오후) 분위기에 맞는 연주곡 위주의 CC 라이선스 음악을 내려받는다."""
     client_id = os.getenv("JAMENDO_CLIENT_ID")
     if not client_id:
         print("JAMENDO_CLIENT_ID가 없어 BGM 없이 진행합니다.")
@@ -50,7 +56,8 @@ def download_bgm(topic: str, output_dir: str = None):
         if os.path.exists(stale_path):
             os.remove(stale_path)
 
-    tag = _music_tag(topic)
+    tag = _music_tag(topic, slot=slot)
+
     try:
         tracks = []
         for search_tag in dict.fromkeys((tag, "relaxing", "background")):

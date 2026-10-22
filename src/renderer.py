@@ -242,7 +242,7 @@ def _apply_readability_gradient(img: Image.Image) -> Image.Image:
     return Image.alpha_composite(img.convert("RGBA"), shade)
 
 
-def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topic: str = None, bgm_path: str = None, section_durations: list | None = None):
+def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topic: str = None, bgm_path: str = None, section_durations: list | None = None, slot: str = "morning"):
     if daily_dir is None:
         daily_dir = config.DATA_DIR
     
@@ -263,20 +263,26 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
                 ref_date_str = json.load(f).get("reference_date")
         if not ref_date_str:
             folder_name = os.path.basename(os.path.normpath(daily_dir))
-            if re.match(r"^\d{4}-\d{2}-\d{2}$", folder_name):
-                ref_date_str = folder_name
+            if re.match(r"^\d{4}-\d{2}-\d{2}", folder_name):
+                ref_date_str = folder_name[:10]
         if ref_date_str:
             target_dt = datetime.datetime.strptime(ref_date_str[:10], "%Y-%m-%d")
     except Exception:
         target_dt = now
 
+    detected_slot = script_data.get("slot", slot)
+    slot_norm = config.normalize_slot(detected_slot)
+    slot_conf = config.SLOT_CONFIG.get(slot_norm, config.SLOT_CONFIG["morning"])
+    badge_text = slot_conf.get("header_badge", "1분 상식 브리핑")
+
     today_str = target_dt.strftime("%Y년 %m월 %d일")
-    header_str = f"{today_str}({weekdays[target_dt.weekday()]}) | 1분 상식 브리핑"
+    header_str = f"{today_str}({weekdays[target_dt.weekday()]}) | {badge_text}"
     topic_str = script_data.get("topic") or topic or script_data.get("cover_title", "오늘의 1분 상식")
     if "?" in topic_str:
         topic_str = script_data.get("cover_title", "오늘의 1분 상식")
     # topic_str도 화면에 그려지므로 여기서 폰트가 그릴 수 없는 문자를 제거한다.
     topic_str = text_render.sanitize(topic_str, font_path)
+
     
     try:
         audio_clip = AudioFileClip(audio_path)
@@ -435,9 +441,10 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
             gap_after_title = 60
             why_label_y = main_bottom + gap_after_title
 
-            label = "오늘 알아야 할 이유"
+            label = "오늘 알아야 할 이유" if slot_norm == "morning" else "알고 보면 소름 돋는 이유"
+            label_color = '#38BDF8' if slot_norm == "morning" else '#F43F5E'
             l_bbox = c_draw.textbbox((0, 0), label, font=font_why_title)
-            c_draw.text(((1080 - (l_bbox[2] - l_bbox[0])) / 2, why_label_y), label, font=font_why_title, fill='#38BDF8', stroke_width=2, stroke_fill='black')
+            c_draw.text(((1080 - (l_bbox[2] - l_bbox[0])) / 2, why_label_y), label, font=font_why_title, fill=label_color, stroke_width=2, stroke_fill='black')
 
             desc_gap = 56
             news_text = text_render.fit_to_lines(c_draw, news_context, font_why_desc, max_width=920, max_lines=3)
@@ -616,10 +623,11 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
         font_summary_title = ImageFont.truetype(font_path, 60)
         font_summary_body = ImageFont.truetype(font_path, 36)
 
-        # 3-1. 태그 라벨 (시안 블루 #38BDF8)
-        tag_text = "오늘의 핵심 정리"
+        # 3-1. 태그 라벨 (오전: 시안 블루 #38BDF8 / 오후: 네온 로즈 #F43F5E)
+        tag_text = "오늘의 핵심 1분 팩트" if slot_norm == "morning" else "오늘의 도파민 썰 한 줄 요약"
+        tag_color = '#38BDF8' if slot_norm == "morning" else '#F43F5E'
         t_bbox = cta_draw.textbbox((0, 0), tag_text, font=font_summary_tag)
-        cta_draw.text(((1080 - (t_bbox[2] - t_bbox[0])) / 2, card_y + 40), tag_text, font=font_summary_tag, fill='#38BDF8', stroke_width=2, stroke_fill='black')
+        cta_draw.text(((1080 - (t_bbox[2] - t_bbox[0])) / 2, card_y + 40), tag_text, font=font_summary_tag, fill=tag_color, stroke_width=2, stroke_fill='black')
 
         # 3-2. 주제 타이틀 (골드 #FFD700)
         card_title = script_data.get("cover_title") or topic_str or "오늘의 1분 상식"

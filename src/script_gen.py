@@ -6,15 +6,16 @@ import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config
 
-def generate_script(topic: str, daily_dir: str = None, research_brief: dict = None, feedback: dict | None = None):
+def generate_script(topic: str, daily_dir: str = None, research_brief: dict = None, feedback: dict | None = None, slot: str = "morning"):
     if daily_dir is None:
         daily_dir = config.DATA_DIR
         
     client = genai.Client(vertexai=True, project=config.GCP_PROJECT_ID, location=config.GCP_LOCATION)
     
-    # 주제 선정 배경(why_today) 및 카테고리(category) 읽어오기
+    # 주제 선정 데이터(0_topic_selection.json) 읽어오기
     why_today = ""
     category = ""
+    detected_slot = slot
     topic_file = os.path.join(daily_dir, "0_topic_selection.json")
     if os.path.exists(topic_file):
         try:
@@ -22,9 +23,14 @@ def generate_script(topic: str, daily_dir: str = None, research_brief: dict = No
                 topic_data = json.load(f)
                 why_today = topic_data.get("why_today", "")
                 category = topic_data.get("category", "")
+                detected_slot = topic_data.get("slot", slot)
         except Exception as e:
             print(f"주제 선정 데이터 읽기 실패: {e}")
             
+    slot_norm = config.normalize_slot(detected_slot)
+    slot_conf = config.SLOT_CONFIG.get(slot_norm, config.SLOT_CONFIG["morning"])
+    base_system_prompt = slot_conf["system_prompt"]
+
     research_json = json.dumps(research_brief or {}, ensure_ascii=False, indent=2)
     why_today_context = f'\n[오늘의 주제 선정 배경 (참고용)]\n"{why_today}"\n' if why_today else ""
     feedback_context = ""
@@ -35,51 +41,66 @@ def generate_script(topic: str, daily_dir: str = None, research_brief: dict = No
 위 issues/corrections에 나온 과장된 수치, 단정적 표현, 조사카드에 없는 내용을 모두 고쳐서 새로 작성하세요.
 """
     
+    if slot_norm == "morning":
+        slot_style_guide = """
+[오전 모닝 1분 팩트 대본 작성 규칙 (벤치마킹: 1분미만, How Money Works)]
+1. [첫 문장 (0초 훅)]: '안녕하세요', '오늘 알아볼 것은' 같은 형식적 인사를 0.1초도 넣지 마.
+   - 첫 컷(script_sections[0])의 narration은 즉시 시청자의 손실 회피 심리나 궁금증을 강하게 찌르는 문장으로 시작해.
+   - 예: "오늘 뉴스에 나온 이 소식, 모르면 당신 통장만 털립니다.", "우리가 매일 쓰는 이 물건, 사실은..."
+2. [단문 중심의 속도감]: 문장을 늘어뜨리지 말고 핵심만 팍팍 꽂히게 단문 위주로 작성해.
+3. [피부 체감 비유]: 복잡한 용어나 수치를 '내 월급, 전기세, 스마트폰, 장바구니' 등 생활 밀착 비유로 설명해.
+4. [마무리]: '오늘 동료들에게 아는 척하기 딱 좋은 한 줄 팩트'로 깔끔하게 정리해.
+"""
+    else:
+        slot_style_guide = """
+[오후 나이트 도파민 썰 대본 작성 규칙 (벤치마킹: Zack D. Films, MagnatesMedia)]
+1. [첫 문장 (0초 훅)]: 인사나 서론 없이 첫 프레임부터 충격적 상황이나 기괴한 호기심으로 낚아채.
+   - 예: "사실 우리가 알던 ~는 완전한 사기극이었습니다.", "만약 인간이 번개에 맞으면 몸속 혈관은 어떻게 될까요?"
+2. [갈등과 서스펜스]: [평화로운 착각] -> [치명적 삽질/비하인드] -> [충격적인 반전 결말] 구조로 친구에게 썰을 풀듯 흥미진진하게 전개해.
+3. [시각적 장면 전환]: 각 컷마다 Pexels에서 검색하기 좋은 구체적인 시각 장면 키워드를 지정해.
+4. [마무리]: 영상이 끝나도 여운이 남는 강렬한 반전이나 다음 생각을 유발하는 질문으로 끝내.
+"""
+
     prompt = f"""
-{config.SYSTEM_PROMPT}
+{base_system_prompt}
 
-오늘의 1분 상식 주제: "{topic}"{why_today_context}
+오늘의 주제: "{topic}"{why_today_context}
 
-다음 조사 카드를 반드시 근거로 사용하세요. 조사 카드에 없는 사실을 새로 만들지 마세요.
+다음 조사 카드를 반드시 근거로 사용하세요. 조사 카드에 없는 허위 사실을 지어내지 마세요.
 {research_json}
 {feedback_context}
-위 주제로 유튜브 숏츠 대본을 작성해줘.
-정확한 설명체로 작성해줘. 예능톤, 밈, 유행어, 과장된 비유, 감탄사 중심의 문장을 사용하지 마.
-시청자가 개념을 이해할 수 있도록 정의, 작동 원리, 실제 사례 또는 영향 순서로 설명해.
 
-[중요 조건]
+{slot_style_guide}
+
+[중요 JSON 출력 조건]
 1. 출력은 오직 **JSON 형식**이어야 해. 백틱(```json) 없이 바로 JSON 객체만 출력해.
-2. `cover_title`: 영상 첫 화면에 노출될 짧고 명확한 제목 (15자 이내)
-3. `script_sections`: 대본을 4~5개의 짧은 문단(각 5~10초 분량)으로 나눠서 배열로 구성해.
-    - [오프닝 작성 규칙]: 제공된 `[오늘의 주제 선정 배경]`을 활용하여 첫 문단(`script_sections[0]`)을 작성해. 단, '최근 뉴스에서~', '오늘 알아볼 주제는~' 같은 정형화된 뉴스 앵커 톤의 도입부는 절대 쓰지 마. 시청자의 일상적인 호기심이나 궁금증을 자연스럽게 자극하며 바로 이야기의 본론으로 끌어들여.
-    - [내용의 깊이 및 분할]: 겉핥기식 요약을 피하고, 주제에 대한 흥미로운 역사적 배경, 흔한 오해, 숨겨진 원리 등 깊이 있는 지식을 종합적으로 다뤄. 이 풍부한 이야기를 특정 틀에 얽매이지 말고, 내용의 논리적·시각적 전환(장면 전환)에 맞춰 자연스럽게 4~5개의 씬으로 분할해.
-    - 각 객체는 `narration`(TTS가 읽을 대사), `caption`(화면에 표시할 짧은 자막), `bg_keyword`(Pexels 검색용 영어 장면 키워드 2~4단어)를 가져야 해.
-    - `caption`은 한 화면에 읽히도록 짧게 만들고, 영문 병기와 이모지는 넣지 마.
-    - `bg_keyword`는 추상 개념명(예: atmospheric refraction, inflation)이 아니라 실제 화면에 보일 장면(예: sun halo sky, sunrise horizon, autumn leaves closeup)을 사용해.
-    - 자막 내용과 배경 장면이 직접 연결되어야 하며, 사람·도시·자연 등 검색 결과가 명확한 시각 소재를 우선해.
-    - 전체 `narration`은 공백 포함 330~430자 분량으로 제한해. 설명을 반복하거나 인사말을 길게 쓰지 마.
-    - 마지막 `narration`은 "다음 시간에 만나요", "이제 아셨죠", "1분 상식 끝" 같은 관성적인 마무리 없이 핵심을 한 문장으로 각인시키며 끝내.
-4. 내용 구성: 단순 꿀팁이 아니라 시청자에게 명확한 '지식(교양, 원리, 유래 등)'을 하나 전달해야 해.
-5. `useful_source_title`: 시청자가 이 상식을 더 깊이 알아볼 수 있는 실제 출처. 뉴스가 출처인 경우, 단순히 '네이버 뉴스 헤드라인'이 아니라 실제 '뉴스 기사의 제목'을 작성해. (예: '한국은행 경제용어사전', '구체적인 기사 제목')
-6. `useful_source_url`: 위 소스에 대한 안내나 실제 URL. 뉴스가 출처인 경우, 포털 메인 주소(예: https://news.naver.com)가 아니라 해당 기사의 '실제 구체적인 URL(직접 링크)'을 제공해.
-7. `cover_keyword`: 표지 사진 검색용 영어 키워드 2~4단어. 주제를 상징하는 구체적인 사물이나 장면(예: scales of justice closeup, courthouse exterior). 추상 개념명 금지, 인물 얼굴 클로즈업이 될 만한 표현 금지. 반드시 '사물·건물·자연·문서'처럼 화면에 사물이 비치는 키워드를 쓰고, 사람이나 인체 부위(person, woman, man, face, hand, crowd)는 포함하지 마.
-8. `summary_keyword`: 마무리 화면 사진 검색용 영어 키워드 2~4단어. 7번과 같은 규칙을 따른다.
-9. `summary_takeaway`: 시청자가 영상 끝 아웃트로에서 기억해야 할 2~3줄 분량의 핵심 결론 요약문(공백 포함 40~75자 내외). 오늘 다룬 지식의 핵심 원리나 교훈을 깔끔하게 요약해.
-10. 모든 텍스트 필드에는 이모지나 특수기호(🚀, ✅, 💡 등)를 절대 쓰지 마. 화면 렌더링에서 깨진 글자로 표시될 수 있어, 한글이나 숫자, 일반 문장부호만 사용해야 해.
-11. 대본 `narration`은 뉴스 앵커나 전문 성우가 한 호흡으로 유려하게 낭독할 구어체로 작성해. 조사(은/는/이/가/을/를/의) 뒤나 짧은 접속부사(결국, 따라서, 한편, 또한) 뒤에는 쉼표(,)를 절대 찍지 마. 쉼표는 문맥상 꼭 필요한 대조나 조건절에서만 컷당 최대 1개 이하로 최소화해.
+2. `cover_title`: 영상 첫 화면에 노출될 짧고 강력한 제목 (15자 이내)
+3. `script_sections`: 대본을 4~5개의 짧은 문단(각 6~9초 분량)으로 나눠서 배열로 구성해.
+    - 각 객체는 다음 필드를 반드시 포함해야 해:
+      - `narration`: TTS가 읽을 한 호흡의 구어체 대사
+      - `caption`: 화면에 굵게 표시할 2줄 이내의 짧은 자막 (이모지 금지)
+      - `highlight_word`: 자막 중 화면에서 노란색으로 가장 강조할 핵심 단어 1개 (예: "대출이자", "사기극", "폭발")
+      - `bg_keyword`: Pexels 검색용 영어 구체적 장면 키워드 2~4단어 (추상명사 금지)
+    - 전체 `narration`은 공백 포함 320~420자 분량으로 제한해.
+4. `summary_takeaway`: 아웃트로에서 기억해야 할 1~2줄 핵심 요약/반전 (40~70자 내외).
+5. `useful_source_title`: 시청자가 더 깊이 알아볼 수 있는 실제 출처/뉴스 기사 제목
+6. `useful_source_url`: 위 출처의 안내 또는 실제 링크
+7. `cover_keyword`: 표지 사진용 사물/건물/자연 Pexels 영어 키워드 2~4단어 (인물 얼굴 클로즈업 제외)
+8. `summary_keyword`: 마무리 사진용 Pexels 영어 키워드 2~4단어
+9. 모든 텍스트에 이모지나 특수기호(🚀, ✅ 등)는 절대 넣지 마 (렌더링 깨짐 방지).
 
 JSON 포맷 예시:
 {{
-    "cover_title": "빅스텝의 의미",
+    "cover_title": "금리 인하의 비밀",
     "script_sections": [
-        {{"narration": "빅스텝은 중앙은행이 기준금리를 한 번에 0.5퍼센트포인트 올리는 조치입니다.", "caption": "빅스텝의 정의", "bg_keyword": "interest rate"}},
-        {{"narration": "금리가 오르면 대출 비용이 증가하고, 가계와 기업의 소비와 투자가 줄어들 수 있습니다.", "caption": "금리 인상이 소비와 투자에 미치는 영향", "bg_keyword": "bank building"}},
-        {{"narration": "수요가 둔화되면 물가 상승 압력도 약해집니다.", "caption": "수요 둔화와 물가 상승 압력", "bg_keyword": "price chart"}},
-        {{"narration": "따라서 빅스텝은 물가를 안정시키는 수단이지만, 경기 둔화라는 비용을 동반할 수 있습니다.", "caption": "물가 안정과 경기 둔화의 양면성", "bg_keyword": "economic chart"}}
+        {{"narration": "금리가 내렸다는데 왜 내 대출 이자는 그대로일까요?", "caption": "금리 인하에도 대출 이자가 그대로인 이유", "highlight_word": "대출이자", "bg_keyword": "bank exterior architecture"}},
+        {{"narration": "은행의 가산금리와 변동 주기 때문입니다.", "caption": "가산금리와 6개월 변동 주기의 비밀", "highlight_word": "가산금리", "bg_keyword": "money cash calculation"}},
+        {{"narration": "기존 대출은 정해진 주기가 지나야 새 금리가 적용됩니다.", "caption": "주기가 지나야 적용되는 금리", "highlight_word": "변동주기", "bg_keyword": "calendar planner clock"}},
+        {{"narration": "결국 내 대출 약정서의 금리 갱신 날짜를 확인해야 손해를 안 봅니다.", "caption": "대출 약정서 확인이 필수", "highlight_word": "약정서", "bg_keyword": "contract document signature"}}
     ],
-    "summary_takeaway": "빅스텝은 경기 둔화의 위험을 감수하고도 물가 안정을 위해 단행하는 강력한 통화정책입니다.",
-    "useful_source_title": "한국은행 경제용어사전",
-    "useful_source_url": "검색창에 '한국은행 경제용어사전'을 검색하면 700개가 넘는 용어를 쉽게 볼 수 있어요!"
+    "summary_takeaway": "금리 인하 소식에 속지 말고, 내 대출 약정서의 금리 변동 주기를 먼저 확인하세요.",
+    "useful_source_title": "한국은행 통화정책 안내",
+    "useful_source_url": "한국은행 홈페이지 '통화정책' 메뉴에서 기준금리 변동 내역을 확인할 수 있습니다."
 }}
 """
     
@@ -93,6 +114,7 @@ JSON 포맷 예시:
         # Pydantic/JSON parsing
         result = json.loads(response.text.strip())
         result["topic"] = topic
+        result["slot"] = slot_norm
         if category:
             result["category"] = category
         sections = result.get("script_sections", [])
@@ -101,7 +123,7 @@ JSON 포맷 예시:
         narration_length = sum(
             len(section.get("narration", "")) for section in sections
         )
-        if not 300 <= narration_length <= 500:
+        if not 280 <= narration_length <= 500:
             raise ValueError(
                 f"narration 분량이 적절하지 않습니다: {narration_length}자"
             )
@@ -109,9 +131,13 @@ JSON 포맷 예시:
             if not all(section.get(key) for key in ("narration", "caption", "bg_keyword")):
                 raise ValueError("각 대본 구간에 narration, caption, bg_keyword가 필요합니다.")
             section["text"] = section["narration"]
+            if "highlight_word" not in section or not section["highlight_word"]:
+                words = section["caption"].split()
+                section["highlight_word"] = words[0] if words else ""
         for key in ("cover_keyword", "summary_keyword"):
             if not result.get(key) or not result[key].strip():
-                raise ValueError(f"{key}가 필요합니다.")
+                # 폴백
+                result[key] = "abstract technology motion"
         
         # Save JSON script to data dir
         script_path = os.path.join(daily_dir, "3_script.json")
@@ -125,6 +151,7 @@ JSON 포맷 예시:
 
 if __name__ == "__main__":
     test_topic = "연말정산 미리 준비하는 꿀팁"
-    print("대본 생성 테스트:")
-    res = generate_script(test_topic)
-    print(json.dumps(res, ensure_ascii=False, indent=2))
+    print("오전 대본 생성 테스트:")
+    res_am = generate_script(test_topic, slot="morning")
+    print(json.dumps(res_am, ensure_ascii=False, indent=2))
+
