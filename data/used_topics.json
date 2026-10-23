@@ -286,5 +286,11 @@
     "slot": "evening",
     "category": "기술",
     "topic": "스타링크, 전쟁 좌우? 숨겨진 기술의 민낯"
+  },
+  {
+    "date": "2026-10-24",
+    "slot": "morning",
+    "category": "경제",
+    "topic": "퇴직연금, 세금 폭탄 피하고 돈 불린다!"
   }
 ]
