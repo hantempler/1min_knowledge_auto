@@ -133,8 +133,8 @@ def get_am_news_data():
 
 
 def get_pm_viral_data():
-    """오후(PM): 도파민 썰, 상식 파괴, 역사·과학 비하인드 토픽 수집 (네이버 세계+랭킹+에버그린)"""
-    print("  -> [오후/PM] 도파민 썰 & 기상천외 토픽 소스 수집 중...")
+    """오후(PM): 지식 브리핑, 상식 파괴, 역사·과학 비하인드 토픽 수집 (네이버 세계+랭킹+에버그린)"""
+    print("  -> [오후/PM] 지식 브리핑 & 비하인드 토픽 소스 수집 중...")
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
@@ -158,7 +158,7 @@ def get_pm_viral_data():
     except Exception as e:
         print(f"    네이버 세계 섹션 수집 오류: {e}")
 
-    # 2. 네이버 언론사별 최다 조회 랭킹 뉴스 (대중적 화제성/도파민)
+    # 2. 네이버 언론사별 최다 조회 랭킹 뉴스 (대중적 화제성/교양)
     try:
         ranking_url = "https://news.naver.com/main/ranking/popularDay.naver"
         res = requests.get(ranking_url, headers=headers, timeout=5)
@@ -178,7 +178,7 @@ def get_pm_viral_data():
     except Exception as e:
         print(f"    네이버 랭킹 뉴스 수집 오류: {e}")
 
-    # 3. 시청률 보장 에버그린 도파민 시드 풀 결합
+    # 3. 에버그린 지식 브리핑 시드 풀 결합
     evergreen_pm_seeds = [
         {"category": "역사", "title": "쥐 잡으라고 포상금 줬더니 쥐를 사육해버린 하노이 쥐 덫 사건 (코브라 효과)", "content": "식민지 시절 프랑스가 쥐 꼬리를 가져오면 돈을 주자 사람들이 쥐 농장을 만들어 꼬리만 자르고 방생한 역사적 삽질"},
         {"category": "과학", "title": "만약 인간이 번개에 직격으로 맞으면 신체 내부 혈관에 생기는 일", "content": "리히텐베르크 형상과 적혈구 파괴 등 번개 피격 시 체내에서 벌어지는 기괴한 물리 화학적 현상"},

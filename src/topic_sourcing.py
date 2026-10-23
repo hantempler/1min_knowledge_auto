@@ -12,7 +12,7 @@ import config
 from scraper import get_naver_headlines, get_am_news_data, get_pm_viral_data
 
 def get_todays_topic(daily_dir=None, reference_date=None, target_category=None, slot="morning"):
-    """오전(AM: 1분 팩트)과 오후(PM: 도파민 썰)에 맞춰 맞춤형 주제를 선정한다."""
+    """오전(AM)과 오후(PM)에 맞춰 지식 브리핑 맞춤형 주제를 선정한다."""
     if daily_dir is None:
         daily_dir = config.DATA_DIR
     if reference_date is None:
@@ -33,7 +33,7 @@ def get_todays_topic(daily_dir=None, reference_date=None, target_category=None, 
             print(f"AM 뉴스 수집 실패: {e}")
             news_data = get_naver_headlines()
     else:
-        print("  -> [오후/PM] 도파민 썰 & 기상천외 토픽 소스 수집 중...")
+        print("  -> [오후/PM] 지식 브리핑 & 비하인드 토픽 소스 수집 중...")
         try:
             news_data = get_pm_viral_data()
         except Exception as e:
@@ -95,7 +95,7 @@ def get_todays_topic(daily_dir=None, reference_date=None, target_category=None, 
     # 슬롯별 선정 프롬프트 분기
     if slot_norm == "morning":
         role_instruction = """
-당신은 출근길 시청자를 위한 '모닝 1분 팩트'의 메인 에디터입니다.
+당신은 출근길 시청자를 위한 '지식 브리핑'의 메인 에디터입니다.
 벤치마킹: 한국의 '1분미만', 글로벌 'How Money Works'
 
 [오전 주제 선정 3대 원칙]
@@ -106,7 +106,7 @@ def get_todays_topic(daily_dir=None, reference_date=None, target_category=None, 
 """
     else:
         role_instruction = """
-당신은 퇴근길·취침 전 시청자의 뇌를 깨우는 '나이트 도파민 썰'의 메인 스토리텔러입니다.
+당신은 시청자에게 흥미진진하고 지적 호기심을 채워주는 '지식 브리핑'의 메인 스토리텔러입니다.
 벤치마킹: 글로벌 'Zack D. Films', 'MagnatesMedia', '사물궁이'
 
 [오후 주제 선정 5대 바이럴 앵글 - 아래 분야를 골고루 선정]
@@ -116,12 +116,12 @@ def get_todays_topic(daily_dir=None, reference_date=None, target_category=None, 
 4. 상식 파괴 진실 폭로: 우리가 학교나 사회에서 100% 믿고 있던 거짓말의 반전
 5. 극한의 가상 시뮬레이션: 만약 ~하면 어떻게 될까? (예: 태양이 1초 만에 꺼지면 지구에 생기는 8분간의 일)
 
-[제목 프레이밍]: 첫 문장을 듣자마자 친구한테 떠들고 싶어지는 25자 이내 도파민 유발형 제목으로 뽑으세요.
+[제목 프레이밍]: 첫 문장을 듣자마자 친구한테 떠들고 싶어지는 25자 이내 지적 호기심 유발형 제목으로 뽑으세요.
 """
 
     prompt = f"""
 기준 날짜: {date_text} (한국 표준시 KST)
-슬롯: {slot_norm.upper()} ({'오전 모닝 1분 팩트' if slot_norm == 'morning' else '오후 나이트 도파민 썰'})
+슬롯: {slot_norm.upper()} ({'오전 지식 브리핑' if slot_norm == 'morning' else '오후 지식 브리핑'})
 
 {role_instruction}
 {used_topics_context}

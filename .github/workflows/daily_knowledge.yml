@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       slot:
-        description: '실행 슬롯 (auto: KST 시간대 자동감지, morning: 오전 1분 팩트, evening: 나이트 도파민 썰)'
+        description: '실행 슬롯 (auto: KST 시간대 자동감지, morning: 오전 지식 브리핑, evening: 오후 지식 브리핑)'
         required: false
         default: 'auto'
         type: choice

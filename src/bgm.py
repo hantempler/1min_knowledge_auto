@@ -26,10 +26,10 @@ def _is_youtube_safe_license(track: dict) -> bool:
 def _music_tag(topic: str, slot: str = "morning") -> str:
     slot_norm = config.normalize_slot(slot)
     if slot_norm == "evening":
-        # 오후 나이트 도파민 썰: 시네마틱/신스웨이브/서스펜스
+        # 오후 지식 브리핑: 시네마틱/신스웨이브/서스펜스
         return random.choice(["cinematic", "synthwave", "soundtrack", "suspense", "electronic"])
     
-    # 오전 모닝 1분 팩트: 산뜻한 로파이/어쿠스틱/칠아웃
+    # 오전 지식 브리핑: 산뜻한 로파이/어쿠스틱/칠아웃
     topic_text = (topic or "").lower()
     if any(word in topic_text for word in ("과학", "의료", "기술", "원리", "우주")):
         return "lofi"

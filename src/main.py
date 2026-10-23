@@ -179,9 +179,9 @@ def _run_pipeline(target_date_str=None, skip_upload=False, target_category=None,
         ).format(**bgm_license)
 
     if slot_norm == "morning":
-        description += "#쇼츠 #1분팩트 #모닝브리핑 #상식 #경제 #생활꿀팁"
+        description += "#쇼츠 #지식브리핑 #1분상식 #상식 #경제 #생활꿀팁"
     else:
-        description += "#쇼츠 #도파민썰 #나이트썰 #미스터리 #역사 #충격실화 #반전"
+        description += "#쇼츠 #지식브리핑 #1분상식 #미스터리 #역사 #교양"
     
     upload_url = upload_video(video_path, title, description)
     
@@ -199,7 +199,7 @@ def main():
     parser = argparse.ArgumentParser(description="1분 상식 브리핑 쇼츠 생성 파이프라인 (오전/오후 이원화)")
     parser.add_argument("--date", type=str, default=None, help="생성 기준 날짜 (YYYY-MM-DD 또는 YYYYMMDD)")
     parser.add_argument("--category", type=str, default=None, help="타겟 카테고리 (경제, 기술, 생활 등)")
-    parser.add_argument("--slot", type=str, default="auto", choices=["auto", "morning", "evening", "am", "pm"], help="발행 슬롯 (auto: KST 시간대 자동 감지, morning/am: 오전 1분 팩트, evening/pm: 오후 도파민 썰)")
+    parser.add_argument("--slot", type=str, default="auto", choices=["auto", "morning", "evening", "am", "pm"], help="발행 슬롯 (auto: KST 시간대 자동 감지, morning/am: 오전 지식 브리핑, evening/pm: 오후 지식 브리핑)")
     parser.add_argument("--skip-upload", action="store_true", help="유튜브 업로드를 건너뛰고 영상만 렌더링")
     args = parser.parse_args()
 

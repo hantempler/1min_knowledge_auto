@@ -46,7 +46,7 @@ DEFAULT_VOICE_NAME = "ko-KR-Neural2-C"
 # AM / PM 이원화 프롬프트 시스템 (벤치마킹: 1분미만 & How Money Works vs Zack D. & MagnatesMedia)
 # ==============================================================================
 AM_SYSTEM_PROMPT = """
-당신은 출근길·등교길 시청자에게 오늘 가장 유용한 지식을 전달하는 '모닝 1분 팩트' 쇼츠의 크리에이터입니다.
+당신은 출근길·등교길 시청자에게 오늘 가장 유용한 지식을 전달하는 '지식 브리핑' 쇼츠의 크리에이터입니다.
 벤치마킹 모델은 한국의 '1분미만'과 글로벌 'How Money Works'입니다.
 
 [핵심 작성 원칙]
@@ -58,7 +58,7 @@ AM_SYSTEM_PROMPT = """
 """
 
 PM_SYSTEM_PROMPT = """
-당신은 퇴근 후 지친 시청자의 뇌를 깨우는 '나이트 도파민 썰' 쇼츠의 스토리텔러입니다.
+당신은 흥미진진하고 깊이 있는 '지식 브리핑' 쇼츠의 스토리텔러입니다.
 벤치마킹 모델은 글로벌 'Zack D. Films'와 'MagnatesMedia'입니다.
 
 [핵심 작성 원칙]
@@ -74,8 +74,8 @@ SYSTEM_PROMPT = AM_SYSTEM_PROMPT  # 기본 하위호환
 SLOT_CONFIG = {
     "morning": {
         "slot_id": "morning",
-        "title_prefix": "[1분 팩트]",
-        "header_badge": "모닝 1분 팩트",
+        "title_prefix": "[지식 브리핑]",
+        "header_badge": "지식 브리핑",
         "theme": "morning",
         "voice": "ko-KR-Neural2-A",  # 스마트하고 세련된 여성 앵커
         "speaking_rate": 1.05,
@@ -87,8 +87,8 @@ SLOT_CONFIG = {
     },
     "evening": {
         "slot_id": "evening",
-        "title_prefix": "[도파민 썰]",
-        "header_badge": "나이트 도파민 썰",
+        "title_prefix": "[지식 브리핑]",
+        "header_badge": "지식 브리핑",
         "theme": "evening",
         "voice": "ko-KR-Neural2-C",  # 묵직하고 흡입력 있는 남성 스토리텔러
         "speaking_rate": 1.08,
@@ -106,8 +106,8 @@ def resolve_slot(slot: str | None = None) -> str:
     """slot 인자를 검사하고, auto이거나 미지정 시 현재 KST 시간 기준으로 morning/evening 결정"""
     if not slot or str(slot).lower().strip() in ["auto", "none", ""]:
         now_kst = datetime.datetime.now(ZoneInfo("Asia/Seoul"))
-        # 한국 시각 새벽(00:00 ~ 06:59 KST)에 실행되면 -> morning (오전 1분 팩트)
-        # 한국 시각 오전/낮(07:00 ~ 23:59 KST)에 실행되면 -> evening (나이트 도파민 썰)
+        # 한국 시각 새벽(00:00 ~ 06:59 KST)에 실행되면 -> morning (오전 지식 브리핑)
+        # 한국 시각 오전/낮(07:00 ~ 23:59 KST)에 실행되면 -> evening (오후 지식 브리핑)
         if now_kst.hour < 7:
             return "morning"
         else:

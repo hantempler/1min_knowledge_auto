@@ -273,7 +273,7 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
     detected_slot = script_data.get("slot", slot)
     slot_norm = config.normalize_slot(detected_slot)
     slot_conf = config.SLOT_CONFIG.get(slot_norm, config.SLOT_CONFIG["morning"])
-    badge_text = slot_conf.get("header_badge", "1분 상식 브리핑")
+    badge_text = slot_conf.get("header_badge", "지식 브리핑")
 
     today_str = target_dt.strftime("%Y년 %m월 %d일")
     header_str = f"{today_str}({weekdays[target_dt.weekday()]}) | {badge_text}"
@@ -441,7 +441,7 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
             gap_after_title = 60
             why_label_y = main_bottom + gap_after_title
 
-            label = "오늘 알아야 할 이유" if slot_norm == "morning" else "알고 보면 소름 돋는 이유"
+            label = "오늘 알아야 할 이유" if slot_norm == "morning" else "오늘의 핵심 포인트"
             label_color = '#38BDF8' if slot_norm == "morning" else '#F43F5E'
             l_bbox = c_draw.textbbox((0, 0), label, font=font_why_title)
             c_draw.text(((1080 - (l_bbox[2] - l_bbox[0])) / 2, why_label_y), label, font=font_why_title, fill=label_color, stroke_width=2, stroke_fill='black')
@@ -626,7 +626,7 @@ def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topi
         font_summary_body = ImageFont.truetype(font_path, 36)
 
         # 3-1. 태그 라벨 (오전: 시안 블루 #38BDF8 / 오후: 네온 로즈 #F43F5E)
-        tag_text = "오늘의 핵심 1분 팩트" if slot_norm == "morning" else "오늘의 도파민 썰 한 줄 요약"
+        tag_text = "오늘의 지식 브리핑 한 줄 요약"
         tag_color = '#38BDF8' if slot_norm == "morning" else '#F43F5E'
         t_bbox = cta_draw.textbbox((0, 0), tag_text, font=font_summary_tag)
         cta_draw.text(((1080 - (t_bbox[2] - t_bbox[0])) / 2, card_y + 40), tag_text, font=font_summary_tag, fill=tag_color, stroke_width=2, stroke_fill='black')

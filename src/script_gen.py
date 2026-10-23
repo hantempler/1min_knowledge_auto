@@ -43,7 +43,7 @@ def generate_script(topic: str, daily_dir: str = None, research_brief: dict = No
     
     if slot_norm == "morning":
         slot_style_guide = """
-[오전 모닝 1분 팩트 대본 작성 규칙 (벤치마킹: 1분미만, How Money Works)]
+[오전 지식 브리핑 대본 작성 규칙 (벤치마킹: 1분미만, How Money Works)]
 1. [첫 문장 (0초 훅)]: '안녕하세요', '오늘 알아볼 것은' 같은 형식적 인사를 0.1초도 넣지 마.
    - 첫 컷(script_sections[0])의 narration은 즉시 시청자의 손실 회피 심리나 궁금증을 강하게 찌르는 문장으로 시작해.
    - 예: "오늘 뉴스에 나온 이 소식, 모르면 당신 통장만 털립니다.", "우리가 매일 쓰는 이 물건, 사실은..."
@@ -53,7 +53,7 @@ def generate_script(topic: str, daily_dir: str = None, research_brief: dict = No
 """
     else:
         slot_style_guide = """
-[오후 나이트 도파민 썰 대본 작성 규칙 (벤치마킹: Zack D. Films, MagnatesMedia)]
+[오후 지식 브리핑 대본 작성 규칙 (벤치마킹: Zack D. Films, MagnatesMedia)]
 1. [첫 문장 (0초 훅)]: 인사나 서론 없이 첫 프레임부터 충격적 상황이나 기괴한 호기심으로 낚아채.
    - 예: "사실 우리가 알던 ~는 완전한 사기극이었습니다.", "만약 인간이 번개에 맞으면 몸속 혈관은 어떻게 될까요?"
 2. [갈등과 서스펜스]: [평화로운 착각] -> [치명적 삽질/비하인드] -> [충격적인 반전 결말] 구조로 친구에게 썰을 풀듯 흥미진진하게 전개해.
