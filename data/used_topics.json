@@ -292,5 +292,11 @@
     "slot": "morning",
     "category": "경제",
     "topic": "퇴직연금, 세금 폭탄 피하고 돈 불린다!"
+  },
+  {
+    "date": "2026-10-24",
+    "slot": "evening",
+    "category": "과학",
+    "topic": "번개 직격: 피 속에 새겨진 번개 문양?"
   }
 ]
