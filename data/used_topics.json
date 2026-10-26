@@ -316,5 +316,11 @@
     "slot": "morning",
     "category": "기술",
     "topic": "내 돈 노리는 사기꾼, AI가 막는 법!"
+  },
+  {
+    "date": "2026-10-26",
+    "slot": "evening",
+    "category": "역사",
+    "topic": "코카콜라, 3개월 만에 폐기된 음료의 반전"
   }
 ]
