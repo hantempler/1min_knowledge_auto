@@ -1,13 +1,13 @@
 __pycache__/
 *.pyc
 
-# 환경변수 및 보안 키
+# 환경변수 및 보안 키 (루트)
 config/.env
 config/*.json
 config/*.txt
 config/git_hub_code
 
-# 데이터 및 임시 생성 파일
+# 데이터 및 임시 생성 파일 (GitHub Actions 전용)
 data/*
 !data/used_topics.json
 *.mp4
@@ -17,3 +17,16 @@ data/*
 
 # Mac OS
 .DS_Store
+
+# ==============================================================================
+# [완전 독립 격리] 로컬 쇼츠 공장 (production) 및 임시 아카이브
+# - GitHub Actions 클라우드 러너와 원격 저장소에 절대 영향을 주지 않도록 완벽 제외
+# ==============================================================================
+production/
+_archive_and_tests/
+output/
+killer_evergreen_shorts_35_master_list.md
+pipeline_isolation_and_production_plan.md
+youtube_upload_and_metadata_strategy.md
+
+*.bak

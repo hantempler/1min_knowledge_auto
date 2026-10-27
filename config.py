@@ -11,14 +11,28 @@ SRC_DIR = os.path.join(BASE_DIR, "src")
 ENV_PATH = os.path.join(CONFIG_DIR, '.env')
 load_dotenv(ENV_PATH)
 
-# GCP / Vertex AI 설정 (기존 history_shorts_v1과 동일하게 세팅)
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.path.join(CONFIG_DIR, "application_default_credentials.json")
-GCP_PROJECT_ID = "project-beba2bf6-d235-4031-ba5"
-GCP_LOCATION = "us-central1"
+import json
 
-# 모델 티어링: 가벼운 작업(주제/조사/검증)은 flash, 대본만 pro
-MODEL_FAST = "gemini-2.5-flash"
-MODEL_PRO = "gemini-2.5-pro"
+# GCP / Vertex AI 설정
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = os.path.join(CONFIG_DIR, "application_default_credentials.json")
+
+def _resolve_project_id():
+    cred_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
+    if cred_path and os.path.exists(cred_path):
+        try:
+            with open(cred_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get("quota_project_id") or data.get("project_id")
+        except Exception:
+            pass
+    return os.getenv("GCP_PROJECT_ID", "project-092cc259-a7f0-4540-ab3")
+
+GCP_PROJECT_ID = _resolve_project_id()
+GCP_LOCATION = "global"
+
+# 모델 티어링: 신규 GCP 키 정합성 확보 (gemini-3.5-flash 통일)
+MODEL_FAST = "gemini-3.5-flash"
+MODEL_PRO = "gemini-3.5-flash"
 
 # YouTube & Pexels API Key
 PEXELS_API_KEY = os.getenv("PEXELS_API_KEY")
