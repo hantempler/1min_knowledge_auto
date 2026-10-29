@@ -364,5 +364,11 @@
     "slot": "evening",
     "category": "기술",
     "topic": "삼성 직원들이 연차 쓰고 면접 보러 가는 곳"
+  },
+  {
+    "date": "2026-10-30",
+    "slot": "morning",
+    "category": "사회",
+    "topic": "11년째 멈춘 담뱃값, 왜 선뜻 못 올릴까?"
   }
 ]
