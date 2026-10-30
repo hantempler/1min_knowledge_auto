@@ -376,5 +376,11 @@
     "slot": "evening",
     "category": "경제",
     "topic": "배송비도 안 나오는 5천 원짜리 옷의 비밀"
+  },
+  {
+    "date": "2026-10-31",
+    "slot": "morning",
+    "category": "과학",
+    "topic": "브레이크 밟을수록 기름값 아끼는 자동차의 비밀"
   }
 ]
