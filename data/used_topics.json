@@ -400,5 +400,11 @@
     "slot": "evening",
     "category": "의료",
     "topic": "자고 나면 키가 2cm 커지는 소름 돋는 비밀"
+  },
+  {
+    "date": "2026-11-02",
+    "slot": "morning",
+    "category": "경제",
+    "topic": "수출 잘된다는데 내 지갑은 왜 텅텅 빌까?"
   }
 ]
