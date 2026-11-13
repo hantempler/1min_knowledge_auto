@@ -22,8 +22,11 @@ data/*
 # [완전 독립 격리] 로컬 쇼츠 공장 (production) 및 임시 아카이브
 # - GitHub Actions 클라우드 러너와 원격 저장소에 절대 영향을 주지 않도록 완벽 제외
 # ==============================================================================
+# 로컬 백업 및 프로토타입 격리
 production/
 _archive_and_tests/
+news_pilot/
+src/_legacy_backup/
 output/
 killer_evergreen_shorts_35_master_list.md
 pipeline_isolation_and_production_plan.md

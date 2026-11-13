@@ -34,7 +34,7 @@ def get_youtube_service():
             
     return build('youtube', 'v3', credentials=creds)
 
-def upload_video(video_path: str, title: str, description: str):
+def upload_video(video_path: str, title: str, description: str, tags: list = None, privacy_status: str = "private") -> str:
     if not os.path.exists(video_path):
         print(f"Error: 업로드할 영상이 없습니다. ({video_path})")
         return None
@@ -45,15 +45,17 @@ def upload_video(video_path: str, title: str, description: str):
         
     print(f"[YouTube] '{title}' 업로드 중...")
     
+    upload_tags = tags if (tags and isinstance(tags, list)) else ['1분상식', '상식', '쇼츠', '이슈', '지식']
+    
     body = {
         'snippet': {
             'title': title,
             'description': description,
-            'tags': ['1분상식', '상식', '쇼츠', '이슈', '지식'],
+            'tags': upload_tags,
             'categoryId': '27' # Education
         },
         'status': {
-            'privacyStatus': 'private',
+            'privacyStatus': privacy_status,
             'selfDeclaredMadeForKids': False
         }
     }

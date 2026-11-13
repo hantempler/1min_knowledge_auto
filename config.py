@@ -147,6 +147,14 @@ os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(ASSETS_DIR, exist_ok=True)
 os.makedirs(SRC_DIR, exist_ok=True)
 
+# 폰트 및 BGM 경로 (news_pilot 신형 엔진 규격)
+FONT_PATH = os.path.join(CONFIG_DIR, "GmarketSansTTFBold.ttf")
+AUDIO_DIR = os.path.join(ASSETS_DIR, "audio")
+OUTPUT_DIR = DATA_DIR
+MODEL_IMAGE = "gemini-nano-banana-2.1"
+MODEL_TTS = "gemini-2.5-flash-preview-tts"
+
+
 import datetime
 from zoneinfo import ZoneInfo
 

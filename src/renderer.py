@@ -1,731 +1,611 @@
+# -*- coding: utf-8 -*-
+"""
+[Step 5] 3단 상시 인식 헤더 & 48pt 하이라이트 자막 렌더러
+- 상단 3단 일체형 뉴스 앵커 UI (영상 내내 100% 상시 고정):
+  * Line 1: [언론사명] 오늘 왜 이 상식? (옐로우 #FFE600, 28pt)
+  * Line 2: Q. {기사 핵심 질문} (화이트 볼드 #FFFFFF, 36~38pt, 화면 안전 너비 900px 제한)
+  * Line 3: 01~04 단계별 해답 인디케이터 (스카이블루 #38BDF8, 30pt)
+- Pillow 기반 48pt 고정, 7px 블랙 스트로크 자막 생성
+  * 기본 텍스트: 화이트 (#FFFFFF)
+  * <hl> 태그: 옐로우 (#FFE600)
+  * 안전 마진 880px 체크 (좌우 최소 100px 여백 보장, 잘림 원천 방지)
+- 불필요한 엔딩 페이지 완전 삭제 (나레이션 종료 시점에 맞춰 0.35s 자연스러운 페이드아웃)
+- gemini-nano-banana-2.1 기반 텍스트 프리(NO text) 9:16 실사 이미지 생성
+- FFmpeg 줌팬 모션 인코딩 + BGM 믹싱
+- 씬별 중간 프레임(frame_s0~s3.jpg) 자동 추출
+"""
 import os
-import re
-import json
-import requests
-import numpy as np
-from PIL import Image, ImageDraw, ImageFont
-from moviepy.editor import AudioFileClip, CompositeAudioClip
-from moviepy.audio.fx.all import audio_fadeout, audio_fadein, audio_loop
 import sys
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import json
+import time
+import re
+import shutil
+import subprocess
+from PIL import Image, ImageDraw, ImageFont
+from google import genai
+from google.genai import types
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
 import config
-import text_render
 
-VISUAL_QUERY_MAP = {
-    "atmospheric refraction": "sun halo sky",
-    "refraction": "sun halo sky",
-    "calendar page": "autumn calendar page",
-    "autumn leaves": "autumn leaves closeup",
-    "sunrise horizon": "sunrise horizon",
+def get_font_path() -> str:
+    candidates = [
+        getattr(config, "FONT_PATH", ""),
+        os.path.join(config.CONFIG_DIR, "GmarketSansTTFBold.ttf"),
+        os.path.join(config.BASE_DIR, "production", "config", "GmarketSansTTFBold.ttf"),
+    ]
+    for p in candidates:
+        if p and os.path.exists(p):
+            return p
+    return candidates[0]
+
+BGM_TRACKS = {
+    # 1. 경쾌/활기 (일상 꿀팁, 빠른 템포 지식)
+    "sunspots": "Sunspots - Jeremy Blake.mp3",
+    "upbeat": "Sunspots - Jeremy Blake.mp3",
+    "fast": "Sunspots - Jeremy Blake.mp3",
+
+    # 2. 긴장/경고/공포/위기 (질병, 생존, 충격 팩트)
+    "beyond": "Beyond - Patrick Patrikios.mp3",
+    "danger": "Beyond - Patrick Patrikios.mp3",
+    "warning": "Beyond - Patrick Patrikios.mp3",
+    "dark": "Beyond - Patrick Patrikios.mp3",
+
+    # 3. 신비/우주/미스터리/첨단 (과학 기술, 인체 심층)
+    "night_snow": "Night Snow - Asher Fulero.mp3",
+    "mystery": "Night Snow - Asher Fulero.mp3",
+    "science": "Night Snow - Asher Fulero.mp3",
+
+    # 4. 차분/지적/다큐멘터리/팩트체크 (금융/경제, 제도, 정책)
+    "quiet_thought": "A Quiet Thought - Wayne Jones.mp3",
+    "documentary": "A Quiet Thought - Wayne Jones.mp3",
+    "calm": "A Quiet Thought - Wayne Jones.mp3",
+
+    # 5. 서정/감성/인문/스토리 (심리, 감동, 휴먼)
+    "one_step": "One Step Closer - Aakash Gandhi.mp3",
+    "emotional": "One Step Closer - Aakash Gandhi.mp3",
+    "piano": "One Step Closer - Aakash Gandhi.mp3",
+
+    # 6. 자연/식품/웰빙/어쿠스틱 (자연 친화, 건강 꿀팁)
+    "blue_creek": "Blue Creek Trail - Dan Lebowitz.mp3",
+    "nature": "Blue Creek Trail - Dan Lebowitz.mp3",
+    "acoustic": "Blue Creek Trail - Dan Lebowitz.mp3",
 }
 
-# 사람이 등장하는 표지 사진은 채널 톤에 어울리지 않고 얼굴 노출 위험도 있으므로 걸러낸다.
-PERSON_ALT_KEYWORDS = (
-    "woman", "women", "man ", "men ", "girl", "boy", "lady", "gentleman",
-    "portrait of a", "close-up of a person", "selfie", "model ", "couple",
-    "human", "people ", "person ", "child", "baby",
-)
-
-# 표지 사진용 안전 키워드 (카테고리별 폴백).
-# 반드시 '사물·건물·문서·자연'처럼 사람이 아닌 것이 화면에 비치는 키워드를 쓴다.
-# 본문 bg_keyword는 '움직이는 배경'용이라 표지로 쓰면 사람 군중이 잡히기 쉽다.
-COVER_KEYWORD_FALLBACK = {
-    "과학": "laboratory glassware science",
-    "기술": "circuit board macro technology",
-    "역사": "antique archive old document",
-    "경제": "stock market chart financial newspaper",
-    "사회": "city skyline buildings architecture",
-    "문화": "traditional cultural heritage artifact",
-    "생활": "household objects flat lay",
-    "우주": "earth planet space orbit",
-    "의료": "stethoscope medical equipment hospital",
-    "환경": "forest trees nature landscape",
+# 주제 카테고리별 최적 무드 음원 자동 매칭 맵
+CATEGORY_BGM_MAP = {
+    # 인체·건강 공포, 생존 위기, 질병 경고 -> 긴장감과 묵직한 베이스의 시네마틱 톤
+    "의료/건강": "Beyond - Patrick Patrikios.mp3",
+    # 팩트체크, 금융/경제 덫, 세금/환급, 제도 분석 -> 지적이고 신뢰감 있는 다큐 스타일
+    "금융/경제": "A Quiet Thought - Wayne Jones.mp3",
+    # 첨단 기술, 우주/미스터리, 심층 과학 원리 -> 차분하고 몽환적인 신비 톤
+    "과학/기술": "Night Snow - Asher Fulero.mp3",
+    # 일상 습관 상식 파괴, 생활 꿀팁 -> 경쾌하고 빠른 비트
+    "생활/안전": "Sunspots - Jeremy Blake.mp3",
 }
 
-# 표지 인트로 상단에 2줄로 배치할 10개 카테고리 매트릭스
-CATEGORIES_MATRIX = [
-    ["과학", "기술", "역사", "경제", "사회"],
-    ["문화", "생활", "우주", "의료", "환경"]
-]
-
-
-
-def get_visual_query(keyword: str) -> str:
-    normalized = (keyword or "").strip().lower()
-    return VISUAL_QUERY_MAP.get(normalized, keyword)
-
-
-def _is_person_photo(alt: str) -> bool:
-    lowered = (alt or "").lower()
-    return any(keyword in lowered for keyword in PERSON_ALT_KEYWORDS)
-
-
-def get_pexels_video(keyword: str, duration_needed: float, output_dir: str = None):
-    if not config.PEXELS_API_KEY:
-        print("PEXELS_API_KEY가 없어 더미 비디오 배경을 사용합니다.")
-        return None
-        
-    keyword = get_visual_query(keyword)
-    url = f"https://api.pexels.com/videos/search?query={keyword}&orientation=portrait&size=medium&per_page=1"
-    headers = {"Authorization": config.PEXELS_API_KEY}
-    
-    try:
-        response = requests.get(url, headers=headers, timeout=20)
-        response.raise_for_status()
-        data = response.json()
-        
-        if data.get("videos") and len(data["videos"]) > 0:
-            video_files = data["videos"][0].get("video_files") or []
-            # 아무거나 첫 번째를 고르면 저해상도가 섞인다. 세로 화면에 맞는
-            # 충분히 큰 해상도 중 파일이 작은 것을 고른다(다운로드 비용 절감).
-            portrait_files = [
-                f for f in video_files
-                if f.get("height") and f.get("width")
-                and f.get("width") <= f.get("height")
-                and f.get("height") >= 720
-                and f.get("link")
-            ]
-            candidates = portrait_files or [
-                f for f in video_files if f.get("link")
-            ]
-            if not candidates:
-                return None
-            target_file = min(candidates, key=lambda f: f.get("height", 99999))
-            link = target_file["link"]
-            
-            # 다운로드한 배경 영상은 해당 날짜의 작업 폴더에 보관
-            if output_dir is None:
-                output_dir = config.DATA_DIR
-            os.makedirs(output_dir, exist_ok=True)
-            safe_name = re.sub(r'[\\/:*?"<>|]', "_", keyword).strip() or "clip"
-            temp_path = os.path.join(output_dir, f"bg_{safe_name}.mp4")
-            with requests.get(link, stream=True, timeout=120) as r:
-                r.raise_for_status()
-                with open(temp_path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192): 
-                        f.write(chunk)
-            return temp_path
-    except Exception as e:
-        print(f"Pexels API 영상 다운로드 오류 ({keyword}): {e}")
-    return None
-
-
-def get_pexels_photo(topic: str, output_dir: str = None, photo_index: int = 0, filename: str = "cover_topic.jpg"):
-    """주제와 관련된 Pexels 사진 중 지정한 순번을 다운로드한다.
-
-    사람이 등장하는 사진(얼굴/전신 노출)은 건너뛰고, 표지로 쓸 만한
-    사물·장면 위주의 사진을 먼저 고른다.
+def resolve_bgm_track(
+    category: str = None,
+    bgm_override: str = None,
+    date_str: str = None
+) -> str:
     """
-    if not config.PEXELS_API_KEY:
-        print("PEXELS_API_KEY가 없어 표지 사진을 사용할 수 없습니다.")
-        return None
-
-    url = "https://api.pexels.com/v1/search"
-    params = {"query": topic, "orientation": "portrait", "size": "large", "per_page": 8}
-    headers = {"Authorization": config.PEXELS_API_KEY}
-
-    try:
-        response = requests.get(url, params=params, headers=headers, timeout=20)
-        response.raise_for_status()
-        photos = response.json().get("photos", [])
-        if not photos:
-            return None
-
-        # 사람이 있는 사진은 표지로 부적합하므로 뒤로 미룬다.
-        object_photos = [p for p in photos if not _is_person_photo(p.get("alt", ""))]
-        ordered = object_photos + [p for p in photos if _is_person_photo(p.get("alt", ""))]
-        if photo_index >= len(ordered):
-            return None
-
-        image_url = (
-            ordered[photo_index].get("src", {}).get("portrait")
-            or ordered[photo_index].get("src", {}).get("large")
-        )
-        if not image_url:
-            return None
-
-        if output_dir is None:
-            output_dir = config.DATA_DIR
-        os.makedirs(output_dir, exist_ok=True)
-        photo_path = os.path.join(output_dir, filename)
-        with requests.get(image_url, stream=True, timeout=30) as image_response:
-            image_response.raise_for_status()
-            with open(photo_path, "wb") as file:
-                for chunk in image_response.iter_content(chunk_size=8192):
-                    file.write(chunk)
-        return photo_path
-    except (requests.RequestException, ValueError) as error:
-        print(f"Pexels 표지 사진 다운로드 오류 ({topic}): {error}")
-        return None
-
-def chunk_text(text, max_length=13):
-    """자막을 2줄 단위의 청크로 나눈다.
-
-    공백 없는 긴 토큰(URL, 영어 단어 등)이 들어오면 한 줄을 통째로 넘어
-    화면 밖으로 나가는 문제가 있어, 토큰 자체가 너무 길면 글자 단위로
-    먼저 쪼갠 뒤 배치한다.
+    BGM 음원 자동 선정 및 오버라이드 해석:
+    1. bgm_override가 직접 지정된 경우(파일명 또는 단축 키워드) 최우선 반영
+    2. 주제 카테고리(의료/건강, 금융/경제, 과학/기술, 생활/안전)에 최적화된 분위기 매칭
+    3. 미지정 또는 매칭 실패 시, 날짜(YYYY-MM-DD) 해시 로테이션으로 6개 음원 골고루 순환
     """
-    lines = text.replace('\n', ' ').split()
-    # 너무 긴 단어는 미리 쪼갠다.
-    expanded = []
-    for word in lines:
-        if len(word) > max_length:
-            for i in range(0, len(word), max_length):
-                expanded.append(word[i:i + max_length])
-        else:
-            expanded.append(word)
-    lines = expanded
+    # 1. 수동 오버라이드 확인
+    if bgm_override and bgm_override.lower() not in ("auto", "none", ""):
+        low = bgm_override.lower().strip()
+        for k, fname in BGM_TRACKS.items():
+            if low == k or low in fname.lower():
+                return fname
+        if bgm_override.endswith(".mp3"):
+            return bgm_override
 
-    chunks = []
-    current_line = []
-    current_chunk_lines = []
-    
-    for word in lines:
-        if sum(len(w) for w in current_line) + len(current_line) + len(word) > max_length:
-            if current_line:
-                current_chunk_lines.append(" ".join(current_line))
-            current_line = [word]
-            if len(current_chunk_lines) == 2:
-                chunks.append("\n".join(current_chunk_lines))
-                current_chunk_lines = []
-        else:
-            current_line.append(word)
-            
-    if current_line:
-        current_chunk_lines.append(" ".join(current_line))
-    if current_chunk_lines:
-        chunks.append("\n".join(current_chunk_lines))
-        
-    return chunks
+    # 2. 카테고리 기반 분위기 매칭
+    if category:
+        for cat_key, fname in CATEGORY_BGM_MAP.items():
+            if cat_key in category:
+                return fname
 
-
-def clean_subtitle_text(text: str) -> str:
-    text = re.sub(r"\([^()]*\)", "", text or "")
-    text = re.sub(r"[‘’'`\"]", "", text)
-    return re.sub(r"\s+", " ", text).strip()
-
-def _run_ffmpeg(cmd: list, temp_dir: str) -> None:
-    """ffmpeg 실행 결과를 temp_dir/ffmpeg.log에 남기고, 실패 시 예외를 발생시킨다."""
-    import subprocess
-    log_path = os.path.join(temp_dir, "ffmpeg.log")
-    with open(log_path, "ab") as log_file:
-        log_file.write(("$ " + " ".join(str(c) for c in cmd) + "\n").encode("utf-8", "replace"))
-        log_file.flush()
-        result = subprocess.run(cmd, stdout=log_file, stderr=subprocess.STDOUT)
-    if result.returncode != 0:
-        raise RuntimeError(f"ffmpeg 실패 (exit={result.returncode}). 로그: {log_path}")
-
-
-def _apply_readability_gradient(img: Image.Image) -> Image.Image:
-    """텍스트 영역의 가독성을 위해 상단/하단에 어두운 그라데이션을 입힌다.
-
-    밝은 하늘·흰 배경 위에 금색 글씨가 올라가면 거의 보이지 않기 때문에,
-    표지 사진의 명암과 무관하게 텍스트가 읽히도록 보정한다.
-    """
-    width, height = img.size
-    gradient = Image.new("L", (1, height), 0)
-    pixels = gradient.load()
-    for y in range(height):
-        ratio = y / max(1, height - 1)
-        if ratio < 0.28:
-            # 상단: 헤더·배지 영역
-            pixels[0, y] = int(150 * (1 - ratio / 0.28))
-        elif ratio > 0.72:
-            # 하단: '왜 지금' 설명 영역
-            pixels[0, y] = int(170 * ((ratio - 0.72) / 0.28))
-        else:
-            pixels[0, y] = 0
-    gradient = gradient.resize((width, height))
-    shade = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    shade.putalpha(gradient)
-    return Image.alpha_composite(img.convert("RGBA"), shade)
-
-
-def render_video(audio_path: str, script_data: dict, daily_dir: str = None, topic: str = None, bgm_path: str = None, section_durations: list | None = None, slot: str = "morning"):
-    if daily_dir is None:
-        daily_dir = config.DATA_DIR
-    
-    font_path = os.path.join(config.CONFIG_DIR, "GmarketSansTTFBold.ttf")
-    temp_dir = os.path.join(daily_dir, "temp_subs")
-    os.makedirs(temp_dir, exist_ok=True)
-    
-    import datetime
-    import subprocess
-    now = datetime.datetime.now()
-    weekdays = ['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일']
-    target_dt = now
-    try:
-        ref_date_str = None
-        topic_file = os.path.join(daily_dir, "0_topic_selection.json")
-        if os.path.exists(topic_file):
-            with open(topic_file, "r", encoding="utf-8") as f:
-                ref_date_str = json.load(f).get("reference_date")
-        if not ref_date_str:
-            folder_name = os.path.basename(os.path.normpath(daily_dir))
-            if re.match(r"^\d{4}-\d{2}-\d{2}", folder_name):
-                ref_date_str = folder_name[:10]
-        if ref_date_str:
-            target_dt = datetime.datetime.strptime(ref_date_str[:10], "%Y-%m-%d")
-    except Exception:
-        target_dt = now
-
-    detected_slot = script_data.get("slot", slot)
-    slot_norm = config.normalize_slot(detected_slot)
-    slot_conf = config.SLOT_CONFIG.get(slot_norm, config.SLOT_CONFIG["morning"])
-    badge_text = slot_conf.get("header_badge", "지식 브리핑")
-
-    today_str = target_dt.strftime("%Y년 %m월 %d일")
-    header_str = f"{today_str}({weekdays[target_dt.weekday()]}) | {badge_text}"
-    topic_str = script_data.get("topic") or topic or script_data.get("cover_title", "오늘의 1분 상식")
-    if "?" in topic_str:
-        topic_str = script_data.get("cover_title", "오늘의 1분 상식")
-    # topic_str도 화면에 그려지므로 여기서 폰트가 그릴 수 없는 문자를 제거한다.
-    topic_str = text_render.sanitize(topic_str, font_path)
-
-    
-    try:
-        audio_clip = AudioFileClip(audio_path)
-        total_duration = audio_clip.duration
-        
-        sections = script_data.get("script_sections", [])
-        narration_lengths = [
-            len(sec.get("narration", sec.get("text", "")))
-            for sec in sections
-        ]
-        total_narration_chars = sum(narration_lengths)
-
-        # 구간별 실측 길이가 있으면 그대로 쓰고, 없으면 기존 글자수 비례로 대체한다.
-        use_measured = (
-            section_durations is not None
-            and len(section_durations) == len(sections)
-            and all(d > 0 for d in section_durations)
-        )
-        if use_measured:
-            print(f"  -> 구간 실측 길이 사용: {section_durations}")
-        else:
-            print("  -> 실측 길이가 없어 글자수 비례로 대체합니다.")
-        
-        # 0. 오디오 믹싱 (MoviePy Audio만 사용)
-        from moviepy.editor import AudioClip, concatenate_audioclips
-        def make_silence(t): return [0, 0]
-        silence_intro = AudioClip(make_frame=make_silence, duration=3.0)
-        silence_outro = AudioClip(make_frame=make_silence, duration=3.0)
-        
-        audio_clip = audio_fadein(audio_clip, 0.01)
-        audio_clip = audio_fadeout(audio_clip, 0.01)
-        final_audio = concatenate_audioclips([silence_intro, audio_clip, silence_outro])
-        if bgm_path and os.path.exists(bgm_path):
-            bgm_clip = AudioFileClip(bgm_path)
-            bgm_clip = audio_loop(bgm_clip, duration=final_audio.duration)
-            bgm_clip = bgm_clip.volumex(0.18)
-            bgm_clip = audio_fadeout(bgm_clip, min(2.0, final_audio.duration))
-            final_audio = CompositeAudioClip([final_audio, bgm_clip])
-            
-        raw_audio_path = os.path.join(temp_dir, "raw_audio.wav")
-        final_audio.write_audiofile(raw_audio_path, fps=44100, logger=None)
-        
-        concat_list = []
-        
-        # 1. 인트로 (표지) 컷 추가 (3초)
-        print("  -> 인트로 컷 렌더링 중...")
-        cover_title = script_data.get("cover_title", "오늘의 1분 상식")
-        sections_for_cover = script_data.get("script_sections", [])
-
-        # 주제 선정 배경(왜 이 주제인지)을 읽어 Intro 하단에 배치한다.
-        news_context = ""
-        category = script_data.get("category", "")
+    # 3. 날짜 기반 6곡 순환 로테이션 (중복 방지)
+    unique_tracks = sorted(list(set(BGM_TRACKS.values())))
+    if date_str:
+        clean = date_str.replace("-", "").strip()
         try:
-            with open(os.path.join(daily_dir, "0_topic_selection.json"), "r", encoding="utf-8") as f:
-                topic_data = json.load(f)
-            if not news_context:
-                news_context = (topic_data.get("why_today") or "").strip()
-            if not category:
-                category = (topic_data.get("category") or "").strip()
-        except Exception:
+            idx = int(clean) % len(unique_tracks)
+            return unique_tracks[idx]
+        except ValueError:
             pass
 
-        # 표지 키워드 결정 순서:
-        #   1) 대본의 cover_keyword (가장 정확)
-        #   2) 카테고리별 안전 키워드 (사람·군중이 섞이지 않는 사물/장면)
-        #   3) 본문 첫 컷의 bg_keyword (마지막 resorts)
-        cover_keyword = (script_data.get("cover_keyword") or "").strip()
-        if not cover_keyword:
-            cover_keyword = COVER_KEYWORD_FALLBACK.get(category, "")
-        if not cover_keyword and sections_for_cover:
-            cover_keyword = sections_for_cover[0].get("bg_keyword", "")
-        if not cover_keyword:
-            cover_keyword = topic_str
-        cover_photo = get_pexels_photo(cover_keyword, daily_dir, photo_index=0, filename="cover_topic.jpg")
+    return "Sunspots - Jeremy Blake.mp3"
 
-        # 첫 문장까지만 쓰되, 문장이 너무 길면 단어 경계에서 자른다.
-        if news_context:
-            first_end = re.search(r"[.?!]", news_context)
-            if first_end and first_end.end() <= 90:
-                news_context = news_context[:first_end.end()]
-            else:
-                cut = news_context[:70].rsplit(" ", 1)[0]
-                news_context = (cut or news_context[:70]).rstrip() + "…"
+def get_bgm_path(bgm_filename: str = None) -> str:
+    """BGM 파일명으로 실제 경로를 탐색하고 유효한 경로 반환 (부재 시 None)"""
+    target = bgm_filename or "Sunspots - Jeremy Blake.mp3"
+    candidates = [
+        os.path.join(getattr(config, "AUDIO_DIR", ""), target),
+        os.path.join(config.BASE_DIR, "assets", "audio", target),
+        os.path.join(config.BASE_DIR, "production", "assets", "audio", target),
+    ]
+    for p in candidates:
+        if p and os.path.exists(p):
+            return p
+    # 파일이 없는 경우 assets/audio 폴더 내 첫 번째 mp3로 fallback
+    fallback_dir = os.path.join(config.BASE_DIR, "assets", "audio")
+    if os.path.exists(fallback_dir):
+        files = [f for f in os.listdir(fallback_dir) if f.endswith(".mp3")]
+        if files:
+            return os.path.join(fallback_dir, files[0])
+    return None
 
-        # 폰트가 그릴 수 없는 문자(이모지 등)를 제거해 네모(□) 깨짐을 막는다.
-        cover_title = text_render.sanitize(cover_title, font_path)
-        news_context = text_render.sanitize(news_context, font_path)
-        category = text_render.sanitize(category, font_path)
-        header_str = text_render.sanitize(header_str, font_path)
+def visible_len(text: str) -> int:
+    """<hl> 태그를 제외한 실제 화면 노출 글자 수 계산"""
+    return len(re.sub(r'<.*?>', '', text))
 
-        # 배경화면에 텍스트 오버레이용 배경 하나 만들기
-        bg_png = os.path.join(temp_dir, "intro_overlay.png")
-        c_img = Image.new('RGBA', (1080, 1920), (255, 255, 255, 0))
-        c_draw = ImageDraw.Draw(c_img)
-
-        # 텍스트들을 한번에 그림
-        font90 = ImageFont.truetype(font_path, 90)
-        font40 = ImageFont.truetype(font_path, 40)
-        font58 = ImageFont.truetype(font_path, 58)
-        font_badge = ImageFont.truetype(font_path, 30)
-        font_why_title = ImageFont.truetype(font_path, 42)
-        font_why_desc = ImageFont.truetype(font_path, 40)
-
-        # 1. 상단 헤더 (날짜 및 브리핑)
-        h_bbox = c_draw.textbbox((0, 0), header_str, font=font40)
-        c_draw.text(((1080 - (h_bbox[2] - h_bbox[0])) / 2, 110), header_str, font=font40, fill=(255, 255, 255, 225), stroke_width=2, stroke_fill='black')
-
-        # 2. 10개 카테고리 2줄 알약 (오늘 카테고리만 노란색 강조, 나머지는 은은한 다크 톤)
-        pill_w = 150
-        pill_h = 48
-        pill_gap_x = 14
-        pill_gap_y = 12
-        row_total_w = 5 * pill_w + 4 * pill_gap_x
-        start_x = (1080 - row_total_w) / 2
-        start_y = 175
-
-        for row_idx, row in enumerate(CATEGORIES_MATRIX):
-            curr_y = start_y + row_idx * (pill_h + pill_gap_y)
-            for col_idx, cat_name in enumerate(row):
-                curr_x = start_x + col_idx * (pill_w + pill_gap_x)
-                box = [curr_x, curr_y, curr_x + pill_w, curr_y + pill_h]
-                if cat_name == category:
-                    c_draw.rounded_rectangle(box, radius=pill_h // 2, fill=(255, 215, 0, 245))
-                    t_bbox = c_draw.textbbox((0, 0), cat_name, font=font_badge)
-                    tx = curr_x + (pill_w - (t_bbox[2] - t_bbox[0])) / 2
-                    ty = curr_y + (pill_h - (t_bbox[3] - t_bbox[1])) / 2 - 2
-                    c_draw.text((tx, ty), cat_name, font=font_badge, fill=(24, 24, 32))
-                else:
-                    c_draw.rounded_rectangle(box, radius=pill_h // 2, fill=(0, 0, 0, 120), outline=(255, 255, 255, 60), width=1)
-                    t_bbox = c_draw.textbbox((0, 0), cat_name, font=font_badge)
-                    tx = curr_x + (pill_w - (t_bbox[2] - t_bbox[0])) / 2
-                    ty = curr_y + (pill_h - (t_bbox[3] - t_bbox[1])) / 2 - 2
-                    c_draw.text((tx, ty), cat_name, font=font_badge, fill=(255, 255, 255, 175))
-
-        # 3. 화면 중앙 대형 메인 타이틀 (1줄 또는 2줄 유동적 처리)
-        main_title = cover_title or topic_str or "오늘의 1분 상식"
-        main_title = text_render.wrap_text(c_draw, main_title, font90, 920)
-        c_bbox = c_draw.multiline_textbbox((0, 0), main_title, font=font90, spacing=20)
-        main_w = c_bbox[2] - c_bbox[0]
-        main_h = c_bbox[3] - c_bbox[1]
-
-        # 1줄일 때 Y=670, 2줄일 때 Y=580으로 상향 배치하여 배경 피사체 가림 방지 및 황금비율 유지
-        lines_count = len(main_title.split("\n"))
-        main_y = 670 if lines_count == 1 else 580
-        main_x = (1080 - main_w) / 2
-        c_draw.multiline_text(
-            (main_x, main_y),
-            main_title, font=font90, fill='#FFD700', align='center', spacing=20,
-            stroke_width=5, stroke_fill='black',
-        )
-        main_bottom = main_y + main_h
-
-        # 4. "왜 지금 이 상식?" + 설명 블록: 메인 타이틀 하단에 유동적으로 배치
-        # 메인 타이틀 끝나는 지점(main_bottom)에서 여유로운 간격(gap=60px)을 두고 시작
-        if news_context:
-            gap_after_title = 60
-            why_label_y = main_bottom + gap_after_title
-
-            label = "오늘 알아야 할 이유" if slot_norm == "morning" else "오늘의 핵심 포인트"
-            label_color = '#38BDF8' if slot_norm == "morning" else '#F43F5E'
-            l_bbox = c_draw.textbbox((0, 0), label, font=font_why_title)
-            c_draw.text(((1080 - (l_bbox[2] - l_bbox[0])) / 2, why_label_y), label, font=font_why_title, fill=label_color, stroke_width=2, stroke_fill='black')
-
-            desc_gap = 56
-            news_text = text_render.fit_to_lines(c_draw, news_context, font_why_desc, max_width=920, max_lines=3)
-            n_bbox = c_draw.multiline_textbbox((0, 0), news_text, font=font_why_desc, spacing=12)
-            c_draw.multiline_text(
-                ((1080 - (n_bbox[2] - n_bbox[0])) / 2, why_label_y + desc_gap),
-                news_text, font=font_why_desc, fill=(255, 255, 255, 245),
-                align='center', spacing=12, stroke_width=2.5, stroke_fill='black'
-            )
-        c_img.save(bg_png)
-
-        intro_ts = os.path.join(temp_dir, "chunk_intro.ts")
-        if cover_photo and os.path.exists(cover_photo):
-            # 표지 사진에 가독성 그라데이션을 먼저 입힌 뒤 텍스트를 얹는다.
-            graded_photo = os.path.join(temp_dir, "cover_graded.jpg")
-            try:
-                with Image.open(cover_photo) as raw_cover:
-                    graded = _apply_readability_gradient(raw_cover)
-                    graded.convert("RGB").save(graded_photo, quality=92)
-            except Exception as e:
-                print(f"표지 그라데이션 처리 실패(원본 그대로 사용): {e}")
-            _run_ffmpeg(["ffmpeg", "-y", "-loop", "1", "-i", graded_photo, "-i", bg_png, "-t", "3.0", "-filter_complex", "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24,format=yuv420p,fade=t=out:st=2.75:d=0.25[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-profile:v", "high", "-level", "4.0", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-an", intro_ts], temp_dir)
+def parse_hl_text(text: str) -> list:
+    """<hl>태그를 상태 기반으로 파싱하여 (문자열, is_highlight) 튜플 리스트 반환.
+    태그가 비정상적으로 닫히지 않았거나 남은 경우에도 화면에 태그 문자가 절대 노출되지 않도록 완전 방어."""
+    parts = []
+    tokens = re.split(r'(</?hl>)', text)
+    is_hl = False
+    for tok in tokens:
+        if not tok:
+            continue
+        if tok == "<hl>":
+            is_hl = True
+        elif tok == "</hl>":
+            is_hl = False
         else:
-            _run_ffmpeg(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=#141432:s=1080x1920:d=3.0:r=24", "-i", bg_png, "-filter_complex", "[0:v]format=yuv420p,fade=t=out:st=2.75:d=0.25[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-profile:v", "high", "-level", "4.0", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-an", intro_ts], temp_dir)
-        concat_list.append(f"file 'chunk_intro.ts'")
-        
-        # 2. 본문 컷
-        print("  -> 본문 컷 렌더링 중...")
-        # 본문 상단에 계속 노출되는 짧은 주제 표기(런닝 헤더)
-        running_title = text_render.wrap_text(c_draw, topic_str, font58, 900)
-        running_bbox = c_draw.multiline_textbbox((0, 0), running_title, font=font58, spacing=10)
-        for section_index, sec in enumerate(sections):
-            text = clean_subtitle_text(sec.get("narration", sec.get("text", "")))
-            text = text_render.sanitize(text, font_path)
-            keyword = sec["bg_keyword"]
-            narration_length = narration_lengths[section_index]
-            if use_measured:
-                sec_duration = section_durations[section_index]
-            else:
-                sec_duration = (narration_length / total_narration_chars) * total_duration if total_narration_chars > 0 else 5.0
-            bg_path = get_pexels_video(keyword, sec_duration, daily_dir)
-            
-            chunks = chunk_text(text, max_length=15)
-            chunk_total_chars = sum(len(c.replace('\n', ' ').replace(' ', '')) for c in chunks)
-            if chunk_total_chars == 0: chunk_total_chars = 1
-            
-            sec_ts = os.path.join(temp_dir, f"chunk_section_{section_index}.ts")
-            cmd = ["ffmpeg", "-y"]
-            if bg_path and os.path.exists(bg_path):
-                cmd.extend(["-stream_loop", "-1", "-i", bg_path])
-            else:
-                cmd.extend(["-f", "lavfi", "-i", f"color=c=#323232:s=1080x1920:d={sec_duration}:r=24"])
-                
-            fade_filter = f"fade=t=in:st=0:d=0.25,fade=t=out:st={max(0, sec_duration - 0.25):.3f}:d=0.25"
-            filter_parts = [f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24,format=yuv420p,{fade_filter}[bg]"]
-            last_v = "bg"
-            
-            curr_t = 0.0
-            for chunk_idx, chunk in enumerate(chunks):
-                chunk_chars = len(chunk.replace('\n', ' ').replace(' ', ''))
-                chunk_dur = sec_duration * (chunk_chars / chunk_total_chars)
-                t_start = curr_t
-                t_end = curr_t + chunk_dur
-                curr_t = t_end
-                
-                overlay_png = os.path.join(temp_dir, f"overlay_sec{section_index}_c{chunk_idx}.png")
-                o_img = Image.new('RGBA', (1080, 1920), (255, 255, 255, 0))
-                o_draw = ImageDraw.Draw(o_img)
-                
-                o_draw.text(((1080 - (h_bbox[2] - h_bbox[0])) / 2, 150), header_str, font=font40, fill=(255, 255, 255, 220), stroke_width=2, stroke_fill='black')
-                o_draw.multiline_text(((1080 - (running_bbox[2] - running_bbox[0])) / 2, 225), running_title, font=font58, fill='#FFD700', align='center', spacing=10, stroke_width=3, stroke_fill='black')
-                
-                fontsize = 65
-                try:
-                    font_sub = ImageFont.truetype(font_path, fontsize)
-                except IOError:
-                    font_sub = ImageFont.load_default()
-                    
-                def _fit(chunk_value, font_obj):
-                    clean_chunk = text_render.sanitize(chunk_value, font_path)
-                    wrapped = text_render.wrap_text(o_draw, clean_chunk, font_obj, 980)
-                    bbox = o_draw.multiline_textbbox((0, 0), wrapped, font=font_obj, spacing=10)
-                    return wrapped, bbox, bbox[2] - bbox[0]
+            clean_tok = tok.replace("<hl>", "").replace("</hl>", "")
+            if clean_tok:
+                parts.append((clean_tok, is_hl))
+    return parts
 
-                sub_text, sub_bbox, sub_w = _fit(chunk, font_sub)
-                while sub_w > 980 and fontsize > 30:
-                    fontsize -= 2
-                    try:
-                        font_sub = ImageFont.truetype(font_path, fontsize)
-                    except IOError:
-                        break
-                    sub_text, sub_bbox, sub_w = _fit(chunk, font_sub)
-                
-                o_draw.multiline_text(((1080 - (sub_bbox[2] - sub_bbox[0])) / 2, 1350), sub_text, font=font_sub, fill='white', align='center', spacing=10, stroke_width=3, stroke_fill='black')
-                o_img.save(overlay_png)
-                
-                cmd.extend(["-i", overlay_png])
-                next_v = f"v{chunk_idx + 1}"
-                filter_parts.append(f"[{last_v}][{chunk_idx + 1}:v]overlay=0:0:enable=\x27between(t,{t_start:.3f},{t_end:.3f})\x27[{next_v}]")
-                last_v = next_v
-                
-            cmd.extend([
-                "-t", str(sec_duration),
-                "-filter_complex", ";".join(filter_parts),
-                "-map", f"[{last_v}]",
-                "-c:v", "libx264",
-                "-profile:v", "high", "-level", "4.0",
-                "-pix_fmt", "yuv420p",
-                "-preset", "ultrafast",
-                "-an",
-                sec_ts
-            ])
-            _run_ffmpeg(cmd, temp_dir)
-            concat_list.append(f"file '{os.path.basename(sec_ts)}'")
-                
-        # 3. 아웃트로 (구독 유도) 컷 추가 (3초)
-        print("  -> 아웃트로 컷 렌더링 중...")
-        sections_for_summary = script_data.get("script_sections", [])
-        summary_keyword = (script_data.get("summary_keyword") or "").strip()
-        if not summary_keyword:
-            summary_keyword = COVER_KEYWORD_FALLBACK.get(category, "")
-        if not summary_keyword and sections_for_summary:
-            summary_keyword = sections_for_summary[-1].get("bg_keyword", "")
-        if not summary_keyword:
-            summary_keyword = topic_str
-        summary_photo = get_pexels_photo(summary_keyword, daily_dir, photo_index=0, filename="summary_topic.jpg")
+def format_subtitle_lines(text: str, max_chars_per_line: int = 18) -> list:
+    """쇼츠 표준 자막: 무조건 1~2줄로 자연스러운 의미 단위 분할 (3줄 원천 차단)."""
+    text = text.strip().replace("\n", " ")
+    v_len = visible_len(text)
+    if v_len <= max_chars_per_line:
+        return [text]
 
-        cta_png = os.path.join(temp_dir, "cta_overlay.png")
-        cta_img = Image.new('RGBA', (1080, 1920), (255, 255, 255, 0))
-        cta_draw = ImageDraw.Draw(cta_img)
+    words = text.split()
+    if len(words) <= 2:
+        return [text]
 
-        # 1. 상단 날짜 헤더 (인트로와 동일)
-        cta_draw.text(((1080 - (h_bbox[2] - h_bbox[0])) / 2, 110), header_str, font=font40, fill=(255, 255, 255, 225), stroke_width=2, stroke_fill='black')
+    # 의미와 가로 너비 균형에 맞춘 2줄 최적 분할
+    best_split = len(words) // 2
+    min_diff = 9999
+    for i in range(1, len(words)):
+        prefix = " ".join(words[:i])
+        open_tags = prefix.count("<hl>")
+        close_tags = prefix.count("</hl>")
+        is_inside_tag = (open_tags > close_tags)
 
-        # 2. 10개 카테고리 2줄 알약 (인트로와 동일한 수미상관 브랜드 통일성)
-        for row_idx, row in enumerate(CATEGORIES_MATRIX):
-            curr_y = start_y + row_idx * (pill_h + pill_gap_y)
-            for col_idx, cat_name in enumerate(row):
-                curr_x = start_x + col_idx * (pill_w + pill_gap_x)
-                box = [curr_x, curr_y, curr_x + pill_w, curr_y + pill_h]
-                if cat_name == category:
-                    cta_draw.rounded_rectangle(box, radius=pill_h // 2, fill=(255, 215, 0, 245))
-                    t_bbox = cta_draw.textbbox((0, 0), cat_name, font=font_badge)
-                    tx = curr_x + (pill_w - (t_bbox[2] - t_bbox[0])) / 2
-                    ty = curr_y + (pill_h - (t_bbox[3] - t_bbox[1])) / 2 - 2
-                    cta_draw.text((tx, ty), cat_name, font=font_badge, fill=(24, 24, 32))
-                else:
-                    cta_draw.rounded_rectangle(box, radius=pill_h // 2, fill=(0, 0, 0, 120), outline=(255, 255, 255, 60), width=1)
-                    t_bbox = cta_draw.textbbox((0, 0), cat_name, font=font_badge)
-                    tx = curr_x + (pill_w - (t_bbox[2] - t_bbox[0])) / 2
-                    ty = curr_y + (pill_h - (t_bbox[3] - t_bbox[1])) / 2 - 2
-                    cta_draw.text((tx, ty), cat_name, font=font_badge, fill=(255, 255, 255, 175))
+        l1 = prefix
+        l2 = " ".join(words[i:])
+        v1 = visible_len(l1)
+        v2 = visible_len(l2)
 
-        # 3. 화면 중앙: [오늘의 핵심 정리] 다크 글래스 카드
-        # 요약 텍스트 결정 (대본의 summary_takeaway 우선, 없으면 마지막 결론 문장 또는 knowledge_angle)
-        summary_takeaway = (script_data.get("summary_takeaway") or "").strip()
-        if not summary_takeaway:
-            if sections_for_summary:
-                summary_takeaway = sections_for_summary[-1].get("narration", "")
-            if not summary_takeaway:
-                try:
-                    with open(os.path.join(daily_dir, "0_topic_selection.json"), "r", encoding="utf-8") as f:
-                        summary_takeaway = json.load(f).get("knowledge_angle", "")
-                except Exception:
-                    summary_takeaway = topic_str
-        summary_takeaway = text_render.sanitize(summary_takeaway, font_path)
+        awkward = 500 if is_inside_tag else 0
+        diff = abs(v1 - v2) + awkward
+        if diff < min_diff:
+            min_diff = diff
+            best_split = i
 
-        card_w = 960
-        card_h = 450
-        card_x = (1080 - card_w) / 2
-        card_y = 430
-        cta_draw.rounded_rectangle(
-            [card_x, card_y, card_x + card_w, card_y + card_h],
-            radius=28, fill=(10, 15, 28, 175), outline=(255, 255, 255, 55), width=2
-        )
+    l1 = " ".join(words[:best_split])
+    l2 = " ".join(words[best_split:])
 
-        font_summary_tag = ImageFont.truetype(font_path, 34)
-        font_summary_title = ImageFont.truetype(font_path, 60)
-        font_summary_body = ImageFont.truetype(font_path, 36)
+    if l1.count("<hl>") > l1.count("</hl>"):
+        l1 = l1 + "</hl>"
+        l2 = "<hl>" + l2
 
-        # 3-1. 태그 라벨 (오전: 시안 블루 #38BDF8 / 오후: 네온 로즈 #F43F5E)
-        tag_text = "오늘의 지식 브리핑 한 줄 요약"
-        tag_color = '#38BDF8' if slot_norm == "morning" else '#F43F5E'
-        t_bbox = cta_draw.textbbox((0, 0), tag_text, font=font_summary_tag)
-        cta_draw.text(((1080 - (t_bbox[2] - t_bbox[0])) / 2, card_y + 40), tag_text, font=font_summary_tag, fill=tag_color, stroke_width=2, stroke_fill='black')
+    return [l1, l2]
 
-        # 3-2. 주제 타이틀 (골드 #FFD700)
-        card_title = script_data.get("cover_title") or topic_str or "오늘의 1분 상식"
-        card_title = text_render.sanitize(card_title, font_path)
-        title_font_size = 60
-        font_summary_title = ImageFont.truetype(font_path, title_font_size)
-        while title_font_size > 36:
-            tb = cta_draw.textbbox((0, 0), card_title, font=font_summary_title)
-            if (tb[2] - tb[0]) <= 840:
-                break
-            title_font_size -= 4
-            font_summary_title = ImageFont.truetype(font_path, title_font_size)
-
-        title_bbox = cta_draw.textbbox((0, 0), card_title, font=font_summary_title)
-        cta_draw.text(((1080 - (title_bbox[2] - title_bbox[0])) / 2, card_y + 100), card_title, font=font_summary_title, fill='#FFD700', stroke_width=3, stroke_fill='black')
-
-        # 구분선
-        cta_draw.line([(card_x + 80, card_y + 185), (card_x + card_w - 80, card_y + 185)], fill=(255, 255, 255, 60), width=1)
-
-        # 3-3. 핵심 요약 2~3줄 본문 (화이트)
-        body_wrapped = text_render.wrap_text(cta_draw, summary_takeaway, font_summary_body, 840)
-        # 최대 3줄로 맞춤
-        body_lines = body_wrapped.split("\n")
-        if len(body_lines) > 3:
-            body_wrapped = text_render.fit_to_lines(cta_draw, summary_takeaway, font_summary_body, max_width=840, max_lines=3)
-        b_bbox = cta_draw.multiline_textbbox((0, 0), body_wrapped, font=font_summary_body, spacing=14)
-        cta_draw.multiline_text(
-            ((1080 - (b_bbox[2] - b_bbox[0])) / 2, card_y + 220),
-            body_wrapped, font=font_summary_body, fill=(255, 255, 255, 240),
-            align='center', spacing=14, stroke_width=2, stroke_fill='black'
-        )
-
-        # 4. 화면 하단: [유익했다면, 좋아요 · 구독] CTA (Y=1360~1580)
-        cta_y = 1360
-        font_cta_small = ImageFont.truetype(font_path, 46)
-        font_cta_big = ImageFont.truetype(font_path, 88)
-        font_cta_sub = ImageFont.truetype(font_path, 34)
-
-        cta_line1 = text_render.sanitize("유익했다면", font_path)
-        cta_line2 = text_render.sanitize("좋아요 · 구독", font_path)
-        cta_line3 = text_render.sanitize("매일 1분 상식 브리핑", font_path)
-
-        small_bbox = cta_draw.textbbox((0, 0), cta_line1, font=font_cta_small)
-        cta_draw.text(((1080 - (small_bbox[2] - small_bbox[0])) / 2, cta_y), cta_line1, font=font_cta_small, fill='white', stroke_width=2, stroke_fill='black')
-
-        big_bbox = cta_draw.textbbox((0, 0), cta_line2, font=font_cta_big)
-        cta_draw.text(((1080 - (big_bbox[2] - big_bbox[0])) / 2, cta_y + 60), cta_line2, font=font_cta_big, fill='#FFD700', stroke_width=4, stroke_fill='black')
-
-        sub_bbox = cta_draw.textbbox((0, 0), cta_line3, font=font_cta_sub)
-        cta_draw.text(((1080 - (sub_bbox[2] - sub_bbox[0])) / 2, cta_y + 175), cta_line3, font=font_cta_sub, fill=(255, 255, 255, 220), stroke_width=2, stroke_fill='black')
-
-        cta_img.save(cta_png)
-
-        outro_ts = os.path.join(temp_dir, "chunk_outro.ts")
-        if summary_photo and os.path.exists(summary_photo):
-            graded_summary = os.path.join(temp_dir, "summary_graded.jpg")
+def generate_image(prompt_text: str, dest_path: str, max_retries: int = 5, force_refresh: bool = False) -> str:
+    """gemini-nano-banana-2.1로 텍스트 프리 9:16 실사 이미지 생성 (프롬프트 일치 검증)"""
+    meta_path = dest_path + ".meta"
+    if not force_refresh and os.path.exists(dest_path) and os.path.getsize(dest_path) > 10000:
+        if os.path.exists(meta_path):
             try:
-                with Image.open(summary_photo) as raw_summary:
-                    graded = _apply_readability_gradient(raw_summary)
-                    graded.convert("RGB").save(graded_summary, quality=92)
-            except Exception as e:
-                print(f"아웃트로 그라데이션 처리 실패(원본 그대로 사용): {e}")
-                graded_summary = summary_photo
-            _run_ffmpeg(["ffmpeg", "-y", "-loop", "1", "-i", graded_summary, "-i", cta_png, "-t", "3.0", "-filter_complex", "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=24,format=yuv420p,fade=t=in:st=0:d=0.25[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-profile:v", "high", "-level", "4.0", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-an", outro_ts], temp_dir)
-        else:
-            _run_ffmpeg(["ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=#0a0a1e:s=1080x1920:d=3.0:r=24", "-i", cta_png, "-filter_complex", "[0:v]format=yuv420p,fade=t=in:st=0:d=0.25[bg];[bg][1:v]overlay=0:0", "-c:v", "libx264", "-profile:v", "high", "-level", "4.0", "-pix_fmt", "yuv420p", "-preset", "ultrafast", "-an", outro_ts], temp_dir)
-        concat_list.append(f"file '{os.path.basename(outro_ts)}'")
-            
-        print("  -> 비디오 합치기(Concat) 및 오디오 병합 중...")
-        concat_txt_path = os.path.join(temp_dir, "concat.txt")
-        with open(concat_txt_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(concat_list))
-            
-        raw_video_ts = os.path.join(temp_dir, "raw_video.ts")
-        output_path = os.path.join(daily_dir, "final_shorts.mp4")
+                with open(meta_path, "r", encoding="utf-8") as mf:
+                    saved_prompt = mf.read().strip()
+                if saved_prompt == prompt_text.strip():
+                    print(f"    [Step 5 Image] 동일 프롬프트 기존 이미지 재사용: {dest_path}", flush=True)
+                    return dest_path
+            except Exception:
+                pass
 
-        # 1차 시도: 규격화된 TS 파일 무손실 Concat 스트림 복사
+    os.makedirs(os.path.dirname(os.path.abspath(dest_path)), exist_ok=True)
+    client_global = genai.Client(vertexai=True, project=config.GCP_PROJECT_ID, location="global")
+    full_prompt = (
+        f"{prompt_text}. "
+        "Cinematic documentary lighting, vertical 9:16 portrait composition, 8k resolution, photorealistic, sharp focus. "
+        "CRITICAL REQUIREMENT: Absolutely NO text, NO words, NO letters, NO alphabet, NO typography, NO hangul, NO korean writing, NO captions, NO watermark."
+    )
+    for attempt in range(max_retries):
         try:
-            _run_ffmpeg(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_txt_path, "-c", "copy", raw_video_ts], temp_dir)
-            _run_ffmpeg(["ffmpeg", "-y", "-i", raw_video_ts, "-i", raw_audio_path, "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", output_path], temp_dir)
-        except Exception as copy_err:
-            print(f"경고: 무손실 복사 병합 실패 ({copy_err}). 2차 안전 재인코딩 병합(Fallback) 진행...")
-            # 2차 방어: 스트림 복사 실패 시 재인코딩으로 직접 final_shorts.mp4 합성
-            _run_ffmpeg([
-                "ffmpeg", "-y",
-                "-f", "concat", "-safe", "0", "-i", concat_txt_path,
-                "-i", raw_audio_path,
-                "-map", "0:v:0", "-map", "1:a:0",
-                "-c:v", "libx264", "-profile:v", "high", "-level", "4.0", "-pix_fmt", "yuv420p", "-preset", "ultrafast",
-                "-c:a", "aac", "-b:a", "192k",
-                "-movflags", "+faststart",
-                output_path
-            ], temp_dir)
-        
-        print(f"영상 렌더링 완료: {output_path}")
-        return output_path
+            print(f"    🎨 [Step 5 Image] 이미지 생성 요청 ({attempt+1}/{max_retries})...", flush=True)
+            resp = client_global.models.generate_content(
+                model=getattr(config, "MODEL_IMAGE", "gemini-nano-banana-2.1"),
+                contents=full_prompt,
+                config=types.GenerateContentConfig(response_modalities=["TEXT", "IMAGE"], candidate_count=1)
+            )
+            if resp.candidates:
+                for part in resp.candidates[0].content.parts:
+                    if hasattr(part, "inline_data") and part.inline_data:
+                        with open(dest_path, "wb") as f:
+                            f.write(part.inline_data.data)
+                        with open(meta_path, "w", encoding="utf-8") as mf:
+                            mf.write(prompt_text.strip())
+                        print(f"    ✨ [Step 5 Image 성공] {dest_path} ({os.path.getsize(dest_path)} bytes)", flush=True)
+                        time.sleep(3)
+                        return dest_path
+            time.sleep(5)
+        except Exception as e:
+            err_str = str(e)
+            print(f"    ⚠️ [Step 5 Image 에러] {err_str[:90]}...", flush=True)
+            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                wait_sec = min(35 + attempt * 15, 90)
+                time.sleep(wait_sec)
+            else:
+                time.sleep(4)
+
+    raise RuntimeError(f"이미지 생성 실패 ({max_retries}회 재시도 초과)")
+
+def format_header_lines(text: str, max_single_len: int = 18) -> list:
+    """헤더 제목을 자연스러운 한국어 의미 단위(수식절 + 피수식어/핵심주어)로 2줄 분할"""
+    text = re.sub(r'^[Qq]\.?\s*', '', text).strip()
+    if len(text) <= max_single_len:
+        return [text]
+    words = text.split()
+    if len(words) <= 2:
+        return [text]
+
+    best_split = len(words) // 2
+    min_score = 999
+    for i in range(1, len(words)):
+        l1 = " ".join(words[:i])
+        l2 = " ".join(words[i:])
+        score = abs(len(l1) - len(l2))
+        # 2번째 줄이 어색한 조사로 시작하는 분할 방지
+        if words[i].startswith(("을", "를", "이", "가", "에", "의", "도", "는", "은", "로")):
+            score += 50
+        # 수식절 완성 후 개행 우대 (~적인, ~하는, ~되는 등)
+        if words[i-1].endswith(("적인", "하는", "되는", "있는", "없는", "보다", "에서", "에게")):
+            score -= 15
+        if score < min_score:
+            min_score = score
+            best_split = i
+
+    return [" ".join(words[:best_split]), " ".join(words[best_split:])]
+
+def create_callout_overlay(callout_items: list, font_path: str, out_png_path: str):
+    """이미지 중앙 상단(y=660~740)에 팝업 등장할 54~62pt 볼드 키워드 오버레이 생성.
+    하이라이트 단어가 여러 개일 때는 1줄로 구겨 넣지 않고 2줄로 개행 분리하여 입체 배치."""
+    img = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
+    if not callout_items:
+        img.save(out_png_path)
+        return
+
+    if isinstance(callout_items, str):
+        callout_items = [callout_items]
+    cleaned = [c.strip() for c in callout_items if c.strip()]
+    if not cleaned:
+        img.save(out_png_path)
+        return
+
+    draw = ImageDraw.Draw(img)
+
+    if len(cleaned) == 1:
+        text = cleaned[0]
+        fsize = 62
+        font_c = ImageFont.truetype(font_path, fsize)
+        tw = draw.textlength(text, font=font_c)
+        while tw > 900 and fsize > 42:
+            fsize -= 2
+            font_c = ImageFont.truetype(font_path, fsize)
+            tw = draw.textlength(text, font=font_c)
+        cx = (1080 - tw) / 2
+        cy = 700
+        # 선명한 붉은색 계통(#FF2A2A) + 8px 딥 블랙 외곽선으로 강렬한 0초 시각적 강조
+        draw.text((cx, cy), text, font=font_c, fill=(255, 42, 42, 255), stroke_width=8, stroke_fill=(0, 0, 0, 240))
+    else:
+        # 2개 이상일 때는 2줄 입체 분리 (1행 순백색, 2행 강렬한 레드)
+        t1, t2 = cleaned[0], " ".join(cleaned[1:])
+        fsize1 = 52
+        font_c1 = ImageFont.truetype(font_path, fsize1)
+        tw1 = draw.textlength(t1, font=font_c1)
+        while tw1 > 900 and fsize1 > 38:
+            fsize1 -= 2
+            font_c1 = ImageFont.truetype(font_path, fsize1)
+            tw1 = draw.textlength(t1, font=font_c1)
+
+        fsize2 = 58
+        font_c2 = ImageFont.truetype(font_path, fsize2)
+        tw2 = draw.textlength(t2, font=font_c2)
+        while tw2 > 900 and fsize2 > 42:
+            fsize2 -= 2
+            font_c2 = ImageFont.truetype(font_path, fsize2)
+            tw2 = draw.textlength(t2, font=font_c2)
+
+        draw.text(((1080 - tw1) / 2, 660), t1, font=font_c1, fill=(255, 255, 255, 255), stroke_width=7, stroke_fill=(0, 0, 0, 240))
+        draw.text(((1080 - tw2) / 2, 735), t2, font=font_c2, fill=(255, 42, 42, 255), stroke_width=8, stroke_fill=(0, 0, 0, 240))
+
+    img.save(out_png_path)
+
+def create_subtitle_overlay(
+    header_sub: str, header_main: str, sub_text: str,
+    font_path: str, out_png_path: str,
+    article_question: str = ""
+):
+    """풀스크린 몰입형: 36pt 1분상식 브랜딩 + 의미 단위 2줄 헤더 + 황금존 48pt 고정 자막 오버레이 생성"""
+    img = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    # 1. 상단 은은한 투명 딤 비네팅 (y: 0~380)
+    for y in range(380):
+        alpha = int(170 * (1 - y / 380) ** 1.5)
+        draw.line([(0, y), (1080, y)], fill=(0, 0, 0, alpha))
+
+    # 2. 하단 자막 영역 황금존 딤 비네팅 (y: 1220~1660)
+    for y in range(1220, 1660):
+        rel = 1 - abs(y - 1440) / 220.0
+        alpha = int(145 * max(0, rel))
+        draw.line([(0, y), (1080, y)], fill=(0, 0, 0, alpha))
+
+    # 3. 상단 채널 브랜딩: 1분상식 (36pt Bold 스카이블루 #38BDF8)
+    font_ch = ImageFont.truetype(font_path, 36)
+    ch_text = "1분상식"
+    cw = draw.textlength(ch_text, font=font_ch)
+    draw.text(((1080 - cw) / 2, 75), ch_text, font=font_ch, fill=(56, 189, 248), stroke_width=3, stroke_fill=(0, 0, 0, 220))
+
+    # 4. 상단 헤더: 의미 단위 자연스러운 2줄 개행
+    q_raw = article_question.strip() if article_question else "오늘 꼭 알아야 할 핵심 상식"
+    q_lines = format_header_lines(q_raw)
+
+    if len(q_lines) == 2:
+        font_q1 = ImageFont.truetype(font_path, 38)
+        lw1 = draw.textlength(q_lines[0], font=font_q1)
+        draw.text(((1080 - lw1) / 2, 135), q_lines[0], font=font_q1, fill=(255, 255, 255), stroke_width=4, stroke_fill=(0, 0, 0, 220))
+
+        font_q2 = ImageFont.truetype(font_path, 44)
+        lw2 = draw.textlength(q_lines[1], font=font_q2)
+        draw.text(((1080 - lw2) / 2, 190), q_lines[1], font=font_q2, fill=(255, 230, 0), stroke_width=4, stroke_fill=(0, 0, 0, 220))
+    else:
+        font_q = ImageFont.truetype(font_path, 40)
+        lw = draw.textlength(q_lines[0], font=font_q)
+        draw.text(((1080 - lw) / 2, 150), q_lines[0], font=font_q, fill=(255, 230, 0), stroke_width=4, stroke_fill=(0, 0, 0, 220))
+
+    # 5. 하단 본문 자막 (황금 리딩 존 y=1340~1410, 무조건 1~2줄, 48pt 고정, hl=노란색 #FFE600)
+    if sub_text:
+        lines = format_subtitle_lines(sub_text, max_chars_per_line=18)
+        fsize_sub = 48
+        font_p = ImageFont.truetype(font_path, fsize_sub)
+
+        # 무조건 1~2줄 고정 배치
+        if len(lines) == 1:
+            y_positions = [1375]
+        else:
+            y_positions = [1340, 1410]
+
+        for l_idx, line in enumerate(lines[:2]):
+            segs = parse_hl_text(line)
+            line_w = sum(draw.textlength(text, font=font_p) for text, is_hl in segs)
+            start_x = (1080 - line_w) / 2
+            cur_x = start_x
+            y_pos = y_positions[l_idx]
+
+            for text, is_hl in segs:
+                color = "#FFE600" if is_hl else "#FFFFFF"
+                draw.text((cur_x, y_pos), text, font=font_p, fill=color, stroke_width=6, stroke_fill="black")
+                cur_x += draw.textlength(text, font=font_p)
+
+    img.save(out_png_path)
+
+def render_news_short(
+    script_data: dict, durations: list, onetake_audio_path: str,
+    output_dir: str, target_date_str: str,
+    category: str = None, bgm_filename: str = None,
+    force_refresh: bool = False
+) -> str:
+    """Step 5 전체 렌더링 파이프라인 (풀스크린 몰입형 + 키워드 애니메이션 팝업)"""
+    temp_dir = os.path.join(output_dir, "temp")
+    os.makedirs(temp_dir, exist_ok=True)
+    font_path = get_font_path()
+
+    sections = script_data["sections"]
+    article_question = script_data.get("article_question", "")
+    output_mp4 = os.path.join(output_dir, f"{target_date_str}.mp4")
+    final_shorts_mp4 = os.path.join(output_dir, "final_shorts.mp4")
+
+    print("\n  🎬 [Step 5 Renderer] 9:16 실사 이미지 확보 중...", flush=True)
+    image_paths = []
+    for idx, sec in enumerate(sections):
+        img_p = os.path.join(temp_dir, f"image_{idx}.jpg")
+        generate_image(sec["image_prompt"], img_p, force_refresh=force_refresh)
+        image_paths.append(img_p)
+
+    print("  🎞️ [Step 5 Renderer] 풀스크린 몰입형 헤더, 자막 및 키워드 애니메이션 인코딩 중...", flush=True)
+    ts_chunks = []
+
+    for idx in range(len(sections)):
+        sec = sections[idx]
+        dur = float(durations[idx])
+        img_in = image_paths[idx]
+        ts_out = os.path.join(temp_dir, f"chunk_{idx}.ts")
+        ov_path = os.path.join(temp_dir, f"overlay_s{idx}.png")
+        callout_path = os.path.join(temp_dir, f"callout_s{idx}.png")
+
+        sub_source = sec.get("subtitle", sec.get("narration", ""))
+        create_subtitle_overlay(
+            sec.get("header_sub", ""), sec.get("header_main", ""),
+            sub_source, font_path, ov_path,
+            article_question=article_question
+        )
+
+        # 씬별 하이라이트 키워드 추출 (core_keyword 우선, <hl> 원본 100% 직결)
+        core_kw = sec.get("core_keyword", "").strip()
+        hl_matches = re.findall(r'<hl>(.*?)</hl>', sub_source)
+        if core_kw:
+            callout_items = [core_kw]
+        elif hl_matches:
+            callout_items = [m.strip() for m in hl_matches if m.strip()]
+        else:
+            callout_items = []
+        c_text = " ".join(callout_items)
+        create_callout_overlay(callout_items, font_path, callout_path)
+
+        total_frames = int(dur * 24)
+        if idx % 2 == 0:
+            z_expr = f"1.0+0.14*(on/{total_frames})"
+        else:
+            z_expr = f"1.14-0.14*(on/{total_frames})"
+
+        # 4대 다이내믹 모션 애니메이션 (등장 후 씬 종료 시까지 100% 영구 유지)
+        st_call = 0.70
+        motion_type = idx % 3
+
+        if c_text and dur >= 2.0:
+            if motion_type == 1:
+                # 모션 1: 레프트 슬라이드 인 (0.7s~0.90s 왼쪽에서 날아와 중앙 정착 후 씬 끝까지 고정)
+                callout_overlay_expr = f"[bg][2:v]overlay=x='min(0, max(0, 0.90-t)*(-1200))':y=0:enable='gte(t,{st_call})'[bg_call]"
+            elif motion_type == 2:
+                # 모션 2: 바텀 슬라이드 업 (0.7s~0.95s 아래에서 부드럽게 상승 후 씬 끝까지 고정)
+                callout_overlay_expr = f"[bg][2:v]overlay=x=0:y='min(0, max(0, 0.95-t)*1000)':enable='gte(t,{st_call})'[bg_call]"
+            else:
+                # 모션 3: 임팩트 비트 팝 (0.7s 발화 순간 쾅! 박힌 뒤 씬 끝까지 고정)
+                callout_overlay_expr = f"[bg][2:v]overlay=0:0:enable='gte(t,{st_call})'[bg_call]"
+
+            filter_str = (
+                f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
+                f"zoompan=z='{z_expr}':d={total_frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920,"
+                f"fps=24,format=yuv420p[bg];"
+                f"{callout_overlay_expr};"
+                f"[bg_call][1:v]overlay=0:0[v]"
+            )
+            cmd = [
+                "ffmpeg", "-y", "-loop", "1", "-i", img_in, "-i", ov_path, "-i", callout_path,
+                "-t", str(dur),
+                "-filter_complex", filter_str,
+                "-map", "[v]",
+                "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-preset", "ultrafast",
+                "-an", ts_out
+            ]
+        else:
+            filter_str = (
+                f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
+                f"zoompan=z='{z_expr}':d={total_frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920,"
+                f"fps=24,format=yuv420p[bg];"
+                f"[bg][1:v]overlay=0:0[v]"
+            )
+            cmd = [
+                "ffmpeg", "-y", "-loop", "1", "-i", img_in, "-i", ov_path,
+                "-t", str(dur),
+                "-filter_complex", filter_str,
+                "-map", "[v]",
+                "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-preset", "ultrafast",
+                "-an", ts_out
+            ]
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+        ts_chunks.append(ts_out)
+
+    # 비디오 청크 Concat (엔딩 페이지 완전 삭제로 순수 4개 씬만 결합)
+    concat_txt_path = os.path.join(temp_dir, "concat.txt")
+    with open(concat_txt_path, "w", encoding="utf-8") as f:
+        for chunk in ts_chunks:
+            f.write(f"file '{chunk.replace('\\', '/')}'\n")
+
+    raw_video_ts = os.path.join(temp_dir, "raw_video.ts")
+    subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_txt_path, "-c", "copy", raw_video_ts],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+
+    # BGM + 보이스 믹싱 및 MP4 렌더링 (나레이션 종료 시점에 맞춘 0.35s 페이드아웃)
+    total_dur = round(sum([float(d) for d in durations]), 2)
+    fade_start = round(total_dur - 0.35, 2)
+    
+    # BGM 음원 동적 결정 (카테고리 매칭 / CLI 오버라이드 / 날짜 로테이션)
+    chosen_bgm = resolve_bgm_track(category=category, bgm_override=bgm_filename, date_str=target_date_str)
+    bgm_path = get_bgm_path(chosen_bgm)
+    
+    if bgm_path and os.path.exists(bgm_path):
+        print(f"  🎵 [Step 5 Renderer] BGM 트랙 적용: {os.path.basename(bgm_path)} (주제: {category or '일반'}, 날짜: {target_date_str})", flush=True)
+        filter_complex = (
+            f"[0:v]fade=t=out:st={fade_start}:d=0.35[v];"
+            f"[2:a]aloop=loop=-1:size=2e+09,volume=0.08,atrim=0:{total_dur},"
+            f"afade=t=out:st={fade_start}:d=0.35[bgm];"
+            f"[1:a]adelay=80|80[vox];"
+            f"[vox][bgm]amix=inputs=2:duration=first:dropout_transition=2[a]"
+        )
+        cmd_final = [
+            "ffmpeg", "-y",
+            "-i", raw_video_ts,
+            "-i", onetake_audio_path,
+            "-i", bgm_path,
+            "-filter_complex", filter_complex,
+            "-map", "[v]",
+            "-map", "[a]",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium",
+            "-c:a", "aac", "-b:a", "192k",
+            "-movflags", "+faststart",
+            output_mp4
+        ]
+    else:
+        print(f"  ℹ️ [Step 5 Renderer] BGM 음원 부재/제외 -> 나레이션 보이스 단독 렌더링 진행", flush=True)
+        filter_complex = (
+            f"[0:v]fade=t=out:st={fade_start}:d=0.35[v];"
+            f"[1:a]adelay=80|80,afade=t=out:st={fade_start}:d=0.35[a]"
+        )
+        cmd_final = [
+            "ffmpeg", "-y",
+            "-i", raw_video_ts,
+            "-i", onetake_audio_path,
+            "-filter_complex", filter_complex,
+            "-map", "[v]",
+            "-map", "[a]",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium",
+            "-c:a", "aac", "-b:a", "192k",
+            "-movflags", "+faststart",
+            output_mp4
+        ]
+    subprocess.run(cmd_final, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+
+    # final_shorts.mp4 복사
+    try:
+        shutil.copy2(output_mp4, final_shorts_mp4)
     except Exception as e:
-        print(f"영상 렌더링 오류: {e}")
-        return None
+        print(f"  ⚠️ final_shorts.mp4 복사 경고: {e}")
+
+    # 검증용 프레임 스냅샷 추출 (씬 01~04 중간점)
+    cum_t = 0.0
+    for idx, d in enumerate(durations):
+        snap_t = round(cum_t + float(d) / 2, 2)
+        subprocess.run(["ffmpeg", "-y", "-ss", str(snap_t), "-i", output_mp4, "-vframes", "1", "-q:v", "2",
+                        os.path.join(output_dir, f"frame_s{idx}.jpg")], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        cum_t += float(d)
+
+    size_mb = round(os.path.getsize(output_mp4) / (1024 * 1024), 2)
+    print(f"  ✨ [Step 5 완료] 최종 영상 렌더링 성공 (엔딩 삭제 완결): {output_mp4} ({size_mb} MB, 길이: {round(total_dur, 1)}초)", flush=True)
+    return output_mp4
+
+if __name__ == "__main__":
+    if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    test_date = "2026-11-13"
+    clean_d = test_date.replace("-", "")
+    script_file = os.path.join(config.DATA_DIR, f"script_{clean_d}.json")
+    if os.path.exists(script_file):
+        with open(script_file, "r", encoding="utf-8") as f:
+            s_data = json.load(f)
+        out_d = os.path.join(config.DATA_DIR, test_date)
+        ts_file = os.path.join(out_d, "temp", "timestamps.json")
+        if os.path.exists(ts_file):
+            with open(ts_file, "r", encoding="utf-8") as f:
+                ts_data = json.load(f)
+            wav_p = os.path.join(out_d, "temp", "audio_onetake.wav")
+            render_news_short(s_data, ts_data["durations"], wav_p, out_d, test_date)
