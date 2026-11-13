@@ -43,17 +43,28 @@ from tts_gen import process_audio_and_sync
 from renderer import render_news_short
 from upload_youtube import upload_video
 
-def calculate_publish_schedule(schedule_hour_kst: int = 19, schedule_min_kst: int = 0) -> tuple:
+def determine_publish_mode(schedule_hour_kst: int = 19, schedule_min_kst: int = 0) -> tuple:
     """
-    매일 저녁 지정 시간(기본: 19:00 KST)에 예약 발행되도록 ISO 8601 UTC 문자열 반환.
-    현재 시간이 19:00 KST 이전이면 당일 19:00 KST, 이미 지난 경우 익일 19:00 KST로 예약.
+    당일 영상 발행 모드 결정:
+    1. 현재 시각이 저녁 7시(19:00 KST) 이전인 경우:
+       -> 당일 저녁 7시 정각 예약 공개 (privacyStatus: 'private', publishAt: 당일 19:00 UTC)
+    2. 현재 시각이 이미 저녁 7시(19:00 KST)를 지난 경우:
+       -> 내일로 미루지 않고 즉시 전체 공개 (privacyStatus: 'public', publishAt: None)
+    
+    반환값: (privacy_mode, publish_at_utc, scheduled_kst_str, log_message)
     """
     now_kst = datetime.datetime.now(ZoneInfo("Asia/Seoul"))
     target_kst = now_kst.replace(hour=schedule_hour_kst, minute=schedule_min_kst, second=0, microsecond=0)
-    if now_kst >= target_kst:
-        target_kst += datetime.timedelta(days=1)
-    target_utc = target_kst.astimezone(ZoneInfo("UTC"))
-    return target_utc.strftime("%Y-%m-%dT%H:%M:%S.000Z"), target_kst.strftime("%Y-%m-%d %H:%M:%S")
+    
+    if now_kst < target_kst:
+        target_utc = target_kst.astimezone(ZoneInfo("UTC"))
+        publish_at_utc = target_utc.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        kst_str = target_kst.strftime("%Y-%m-%d %H:%M:%S")
+        log_msg = f"당일 저녁 {schedule_hour_kst}시 예약 발행 (예약 일시: {kst_str} KST)"
+        return "private", publish_at_utc, kst_str, log_msg
+    else:
+        log_msg = f"당일 저녁 {schedule_hour_kst}시 경과 -> 즉시 전체 공개 (public) 발행"
+        return "public", None, None, log_msg
 
 def run_pipeline(
     target_date_str: str = None,
@@ -121,20 +132,23 @@ def run_pipeline(
         yt_desc = yt_meta.get("description") or yt_meta.get("youtube_description") or ""
         yt_tags = yt_meta.get("tags") or yt_meta.get("youtube_tags") or ["1분상식", "쇼츠"]
 
-        # 매일 저녁 7시 (19:00 KST) 예약 발행 시간 계산
-        publish_at_utc, scheduled_kst = calculate_publish_schedule(schedule_hour_kst=schedule_hour)
-        print(f"\n[Step 6] 유튜브 예약 업로드 진행 중... (예약 일시: {scheduled_kst} KST / 저녁 {schedule_hour}시)", flush=True)
+        # 발행 모드 결정 (19시 이전: 당일 19시 예약 / 19시 이후: 즉시 전체 공개)
+        privacy_mode, publish_at_utc, scheduled_kst, publish_log = determine_publish_mode(schedule_hour_kst=schedule_hour)
+        print(f"\n[Step 6] 유튜브 업로드 진행 중... ({publish_log})", flush=True)
 
         upload_url = upload_video(
             video_path=video_path,
             title=yt_title,
             description=yt_desc,
             tags=yt_tags,
-            privacy_status="private",
+            privacy_status=privacy_mode,
             publish_at=publish_at_utc
         )
         if upload_url:
-            print(f"  🎉 [YouTube 예약 업로드 성공] {upload_url} (공개 예정: {scheduled_kst} KST)", flush=True)
+            if scheduled_kst:
+                print(f"  🎉 [YouTube 예약 업로드 성공] {upload_url} (공개 예정: {scheduled_kst} KST)", flush=True)
+            else:
+                print(f"  🎉 [YouTube 즉시 전체공개 성공] {upload_url}", flush=True)
         else:
             print("  ⚠️ [YouTube 업로드 실패 또는 인증 미설정]", flush=True)
     else:

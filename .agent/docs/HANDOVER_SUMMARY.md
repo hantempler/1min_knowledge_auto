@@ -1,20 +1,18 @@
 # 📋 [실시간 인수인계 보고서] 1분 지식 쇼츠 작업 현황
 
-> **최종 기록 일시**: 2026-11-13 23:51 (KST)  
-> **GitHub 배포 완료**: 커밋 `bfff234` (`origin/main` 푸시 완결)  
+> **최종 기록 일시**: 2026-11-14 00:04 (KST)  
 > **기록 목적**: 다른 PC, 노트북, 웹 등 어떤 환경에서 접속하더라도 직전 작업 결과를 1초 만에 파악하고 즉시 이어하기 위한 실시간 상황 기록 문서
 
 ---
 
 ## 🚨 1. 크로스 환경 즉시 이어하기 핵심 요약 (TL;DR)
 
-1. **매일 저녁 7시 (19:00 KST) 유튜브 자동 예약 발행 기능 탑재 (`origin/main` 배포 완료)**:
-   - **커밋 해시**: `bfff234` (`main -> main`)
-   - **KeyError 원천 차단**: `yt_meta.get('title')` / `yt_meta.get('youtube_title')` 다중 폴백 구조로 딕셔너리 키 불일치 에러 완벽 해결.
-   - **유튜브 API 공식 예약 발행 연동**:
-     - `upload_youtube.py`에 `publishAt` (ISO 8601 UTC) 매핑 로직 탑재.
-     - `calculate_publish_schedule()`: 실행 시점이 19:00 KST 이전이면 **당일 19:00 KST**, 이후이면 **익일 19:00 KST**로 자동 계산.
-     - 예약 발행 시 유튜브 정책에 맞추어 `privacyStatus: 'private'` 유지 상태에서 지정 시각에 자동 전체 공개로 전환.
+1. **당일 영상 발행 모드 정밀 개편 완료 (19시 이전 당일 예약 / 19시 이후 즉시 전체공개)**:
+   - **사용자 승인 완료 반영**:
+     - `determine_publish_mode()`:
+       1) **19:00 KST 이전 실행 시**: 당일 저녁 7시(19:00 KST)에 예약 발행 (`privacyStatus: 'private'`, `publishAt: 당일 19:00 UTC`).
+       2) **19:00 KST 경과 후 실행 시**: 내일로 넘기지 않고 **즉시 전체 공개 (`privacyStatus: 'public'`, `publishAt: None`)**로 당일 완결 게시.
+   - **`upload_youtube.py`**: `publish_at` 부재 시 `privacy_status='public'` 정상 승계.
    - **원격 브랜치 24개 커밋 충돌 원천 해소**: `origin/main`의 24개 `used_topics.json` 자동화 누적 커밋을 100% 존중하여 Fast-forward 정렬 완료 (`Your branch is up to date with 'origin/main'`). 내일은 내일의 신규 주제만 이어서 기록됨.
    - **GitHub Actions 인터페이스 승계 & 동적 유튜브 메타 연동**:
      - `daily_knowledge.yml`의 `python src/main.py --slot "$SLOT_CHOICE"` 호출을 완벽하게 수용.
