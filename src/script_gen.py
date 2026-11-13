@@ -126,12 +126,17 @@ def verify_script_facts(article_body: str, script_data: dict) -> dict:
     print(f"  🔍 [Step 3 Fact-Check] 수치 및 팩트 교차 검증: {fact_report['status']} (검증 수치: {script_numbers})", flush=True)
     return fact_report
 
-def generate_youtube_metadata(topic_info: dict, script_data: dict) -> dict:
+def generate_youtube_metadata(arg1: dict, arg2: dict) -> dict:
     """유튜브 업로드용 고효율 설명란, 태그, 제목, 면책조항 자동 생성 (SEO & 팩트 출처 보장)"""
-    press = topic_info.get("press", script_data.get("news_outlet", "주요 언론사"))
-    article_title = topic_info.get("selected_article_title", script_data.get("news_headline", ""))
+    if "sections" in arg1:
+        script_data, topic_info = arg1, arg2
+    else:
+        topic_info, script_data = arg1, arg2
+
+    press = topic_info.get("press") or script_data.get("news_outlet", "주요 언론사")
+    article_title = topic_info.get("selected_article_title") or script_data.get("news_headline", "")
     url = topic_info.get("url", "")
-    shorts_title = script_data.get("title", topic_info.get("shorts_title", ""))
+    shorts_title = script_data.get("title") or topic_info.get("shorts_title", "")
     article_question = script_data.get("article_question", "")
 
     sections = script_data.get("sections", [])
@@ -147,8 +152,12 @@ def generate_youtube_metadata(topic_info: dict, script_data: dict) -> dict:
         clean_cat = category.replace("/", "")
         if clean_cat not in base_tags:
             base_tags.append(clean_cat)
-    # 대본 속 <hl> 핵심 키워드 동적 태그 추가 (하드코딩 완전 배제)
+            
+    # 대본 속 core_keyword 및 <hl> 핵심 키워드 동적 태그 추가 (하드코딩 완전 배제)
     for sec in sections:
+        core_kw = sec.get("core_keyword", "").strip()
+        if core_kw and len(core_kw) >= 2 and core_kw not in base_tags:
+            base_tags.append(core_kw)
         hls = re.findall(r'<hl>(.*?)</hl>', sec.get("subtitle", ""))
         for h in hls:
             clean_h = re.sub(r'[^가-힣a-zA-Z0-9]', '', h).strip()
@@ -189,6 +198,9 @@ def generate_youtube_metadata(topic_info: dict, script_data: dict) -> dict:
     youtube_title = f"{clean_title} #shorts"
 
     metadata = {
+        "title": youtube_title,
+        "description": youtube_description,
+        "tags": base_tags,
         "youtube_title": youtube_title,
         "youtube_description": youtube_description,
         "youtube_tags": base_tags,
