@@ -1,7 +1,7 @@
 # 📋 [실시간 인수인계 보고서] 1분 지식 쇼츠 작업 현황
 
-> **최종 기록 일시**: 2026-11-13 23:42 (KST)  
-> **GitHub 배포 완료**: 커밋 `cb10dd5` (`origin/main` 푸시 완결)  
+> **최종 기록 일시**: 2026-11-13 23:47 (KST)  
+> **GitHub 배포 완료**: 커밋 `940cfe8` (`origin/main` 푸시 완결)  
 > **기록 목적**: 다른 PC, 노트북, 웹 등 어떤 환경에서 접속하더라도 직전 작업 결과를 1초 만에 파악하고 즉시 이어하기 위한 실시간 상황 기록 문서
 
 ---
@@ -9,9 +9,12 @@
 ## 🚨 1. 크로스 환경 즉시 이어하기 핵심 요약 (TL;DR)
 
 1. **GitHub Actions 무인 자동화 배포 완료 (`origin/main` 푸시 성공)**:
-   - **커밋 해시**: `cb10dd5` (`main -> main`)
-   - **Python 3.11 호환성 패치 완료 (`renderer.py`)**: GitHub Actions 러너(Python 3.11) 환경에서 f-string 내 백슬래시(`\`) 미지원으로 인한 `SyntaxError`를 `clean_chunk` 변수 분리로 완벽 해결.
-   - **BGM 결함 방어 완비**: CI/CD 환경에서 `.gitignore`로 인해 MP3 파일이 부재하더라도, BGM을 제외하고 보이스 단독으로 무중단 정상 렌더링되도록 `renderer.py` 예외 분기 완비.
+   - **커밋 해시**: `940cfe8` (`main -> main`)
+   - **유튜브 메타데이터 정밀 동적화 완료**:
+     - 제목: 0초 훅 제목 + `#shorts` 자동 결합 (예: `싹 난 마늘, 절대 버리면 안 되는 이유 #shorts`)
+     - 설명란: 기사 관통 핵심 질문(`article_question`) + 씬별 3줄 요약 + 언론사 원문 기사 링크 URL + 법적 면책 조항 + 해시태그 100% 자동 생성.
+     - 태그: 기본 태그 외에 대본의 `core_keyword` 및 `<hl>` 키워드 자동 추출 매핑.
+     - 업로드 상태: **`privacyStatus: 'private'` (100% 비공개)**로 안전 업로드.
    - **원격 브랜치 24개 커밋 충돌 원천 해소**: `origin/main`의 24개 `used_topics.json` 자동화 누적 커밋을 100% 존중하여 Fast-forward 정렬 완료 (`Your branch is up to date with 'origin/main'`). 내일은 내일의 신규 주제만 이어서 기록됨.
    - **GitHub Actions 인터페이스 승계 & 동적 유튜브 메타 연동**:
      - `daily_knowledge.yml`의 `python src/main.py --slot "$SLOT_CHOICE"` 호출을 완벽하게 수용.
