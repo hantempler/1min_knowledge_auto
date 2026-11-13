@@ -519,7 +519,8 @@ def render_news_short(
     concat_txt_path = os.path.join(temp_dir, "concat.txt")
     with open(concat_txt_path, "w", encoding="utf-8") as f:
         for chunk in ts_chunks:
-            f.write(f"file '{chunk.replace('\\', '/')}'\n")
+            clean_chunk = chunk.replace("\\", "/")
+            f.write(f"file '{clean_chunk}'\n")
 
     raw_video_ts = os.path.join(temp_dir, "raw_video.ts")
     subprocess.run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_txt_path, "-c", "copy", raw_video_ts],
