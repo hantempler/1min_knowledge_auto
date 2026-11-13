@@ -34,7 +34,14 @@ def get_youtube_service():
             
     return build('youtube', 'v3', credentials=creds)
 
-def upload_video(video_path: str, title: str, description: str, tags: list = None, privacy_status: str = "private") -> str:
+def upload_video(
+    video_path: str,
+    title: str,
+    description: str,
+    tags: list = None,
+    privacy_status: str = "private",
+    publish_at: str = None
+) -> str:
     if not os.path.exists(video_path):
         print(f"Error: 업로드할 영상이 없습니다. ({video_path})")
         return None
@@ -47,6 +54,16 @@ def upload_video(video_path: str, title: str, description: str, tags: list = Non
     
     upload_tags = tags if (tags and isinstance(tags, list)) else ['1분상식', '상식', '쇼츠', '이슈', '지식']
     
+    # 예약 발행(publishAt) 시 유튜브 정책상 privacyStatus는 무조건 'private'이어야 함
+    actual_privacy = "private" if publish_at else privacy_status
+    status_dict = {
+        'privacyStatus': actual_privacy,
+        'selfDeclaredMadeForKids': False
+    }
+    if publish_at:
+        status_dict['publishAt'] = publish_at
+        print(f"  ⏰ [YouTube 예약 발행 설정] UTC: {publish_at} (KST 19:00 공개 예정)")
+
     body = {
         'snippet': {
             'title': title,
@@ -54,10 +71,7 @@ def upload_video(video_path: str, title: str, description: str, tags: list = Non
             'tags': upload_tags,
             'categoryId': '27' # Education
         },
-        'status': {
-            'privacyStatus': privacy_status,
-            'selfDeclaredMadeForKids': False
-        }
+        'status': status_dict
     }
     
     media = MediaFileUpload(video_path, mimetype='video/mp4', resumable=True)

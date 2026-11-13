@@ -43,6 +43,18 @@ from tts_gen import process_audio_and_sync
 from renderer import render_news_short
 from upload_youtube import upload_video
 
+def calculate_publish_schedule(schedule_hour_kst: int = 19, schedule_min_kst: int = 0) -> tuple:
+    """
+    매일 저녁 지정 시간(기본: 19:00 KST)에 예약 발행되도록 ISO 8601 UTC 문자열 반환.
+    현재 시간이 19:00 KST 이전이면 당일 19:00 KST, 이미 지난 경우 익일 19:00 KST로 예약.
+    """
+    now_kst = datetime.datetime.now(ZoneInfo("Asia/Seoul"))
+    target_kst = now_kst.replace(hour=schedule_hour_kst, minute=schedule_min_kst, second=0, microsecond=0)
+    if now_kst >= target_kst:
+        target_kst += datetime.timedelta(days=1)
+    target_utc = target_kst.astimezone(ZoneInfo("UTC"))
+    return target_utc.strftime("%Y-%m-%dT%H:%M:%S.000Z"), target_kst.strftime("%Y-%m-%d %H:%M:%S")
+
 def run_pipeline(
     target_date_str: str = None,
     force_refresh: bool = False,
@@ -50,7 +62,8 @@ def run_pipeline(
     output_dir: str = None,
     bgm: str = "auto",
     slot: str = "auto",
-    skip_upload: bool = False
+    skip_upload: bool = False,
+    schedule_hour: int = 19
 ) -> dict:
     start_time = time.time()
     
@@ -98,20 +111,30 @@ def run_pipeline(
         category=topic_info.get("category"), bgm_filename=bgm, force_refresh=force_refresh
     )
 
-    # Step 6: 유튜브 동적 메타데이터(제목·설명·태그) 생성 및 업로드
+    # Step 6: 유튜브 동적 메타데이터 생성 및 매일 저녁 7시(19:00 KST) 예약 업로드
     yt_meta = generate_youtube_metadata(script_data, topic_info)
     upload_url = None
+    scheduled_kst = None
     if not skip_upload:
-        print("\n[Step 6] 동적 메타데이터 기반 유튜브 업로드 진행 중...", flush=True)
+        # 안전한 딕셔너리 키 추출 (KeyError 원천 방어)
+        yt_title = yt_meta.get("title") or yt_meta.get("youtube_title") or f"{topic_info.get('shorts_title', '1분 상식')} #shorts"
+        yt_desc = yt_meta.get("description") or yt_meta.get("youtube_description") or ""
+        yt_tags = yt_meta.get("tags") or yt_meta.get("youtube_tags") or ["1분상식", "쇼츠"]
+
+        # 매일 저녁 7시 (19:00 KST) 예약 발행 시간 계산
+        publish_at_utc, scheduled_kst = calculate_publish_schedule(schedule_hour_kst=schedule_hour)
+        print(f"\n[Step 6] 유튜브 예약 업로드 진행 중... (예약 일시: {scheduled_kst} KST / 저녁 {schedule_hour}시)", flush=True)
+
         upload_url = upload_video(
             video_path=video_path,
-            title=yt_meta["title"],
-            description=yt_meta["description"],
-            tags=yt_meta.get("tags"),
-            privacy_status="private"
+            title=yt_title,
+            description=yt_desc,
+            tags=yt_tags,
+            privacy_status="private",
+            publish_at=publish_at_utc
         )
         if upload_url:
-            print(f"  🎉 [YouTube 업로드 성공] {upload_url}", flush=True)
+            print(f"  🎉 [YouTube 예약 업로드 성공] {upload_url} (공개 예정: {scheduled_kst} KST)", flush=True)
         else:
             print("  ⚠️ [YouTube 업로드 실패 또는 인증 미설정]", flush=True)
     else:
@@ -123,6 +146,8 @@ def run_pipeline(
     print(f"   ▶ 완성 비디오: {video_path}", flush=True)
     if upload_url:
         print(f"   ▶ 유튜브 주소: {upload_url}", flush=True)
+        if scheduled_kst:
+            print(f"   ▶ 공개 예약일: {scheduled_kst} KST", flush=True)
     print(f"   ▶ 검증 프레임: {output_dir}/frame_s0~s3.jpg", flush=True)
     print("=" * 75 + "\n", flush=True)
 
@@ -135,6 +160,7 @@ def run_pipeline(
         "durations": durations,
         "video_path": video_path,
         "youtube_url": upload_url,
+        "youtube_scheduled_kst": scheduled_kst,
         "youtube_metadata": yt_meta,
         "output_dir": output_dir,
         "elapsed_sec": elapsed
@@ -153,6 +179,7 @@ def main():
     parser.add_argument("--force", action="store_true", help="기존 캐시 무시하고 강제 재생성")
     parser.add_argument("--voice", type=str, default="Puck", help="TTS 성우 (Puck, Fenrir 등)")
     parser.add_argument("--bgm", type=str, default="auto", help="BGM 파일명 또는 별칭 (auto, danger, upbeat, mystery 등)")
+    parser.add_argument("--schedule-hour", type=int, default=19, help="유튜브 예약 발행 KST 시 (기본값: 19 = 저녁 7시)")
     parser.add_argument("--skip-upload", action="store_true", help="유튜브 업로드를 건너뛰고 영상만 렌더링")
     
     args = parser.parse_args()
@@ -168,7 +195,8 @@ def main():
         voice_name=args.voice,
         bgm=args.bgm,
         slot=args.slot,
-        skip_upload=args.skip_upload
+        skip_upload=args.skip_upload,
+        schedule_hour=args.schedule_hour
     )
 
 if __name__ == "__main__":
