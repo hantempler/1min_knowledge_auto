@@ -538,7 +538,7 @@ def render_news_short(
         print(f"  🎵 [Step 5 Renderer] BGM 트랙 적용: {os.path.basename(bgm_path)} (주제: {category or '일반'}, 날짜: {target_date_str})", flush=True)
         filter_complex = (
             f"[0:v]fade=t=out:st={fade_start}:d=0.35[v];"
-            f"[2:a]aloop=loop=-1:size=2e+09,volume=0.08,atrim=0:{total_dur},"
+            f"[2:a]aloop=loop=-1:size=2e+09,volume=0.22,atrim=0:{total_dur},"
             f"afade=t=out:st={fade_start}:d=0.35[bgm];"
             f"[1:a]adelay=80|80[vox];"
             f"[vox][bgm]amix=inputs=2:duration=first:dropout_transition=2[a]"

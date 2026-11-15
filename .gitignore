@@ -12,6 +12,7 @@ data/*
 !data/used_topics.json
 *.mp4
 *.mp3
+!assets/audio/*.mp3
 *.wav
 *.ts
 
