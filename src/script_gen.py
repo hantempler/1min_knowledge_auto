@@ -304,9 +304,9 @@ def generate_script(topic_info: dict, force_refresh: bool = False, output_dir: s
     article_body = topic_info.get("article_body", "")
 
     prompt = f"""
-당신은 대한민국 1위 유튜브 지식 쇼츠(1분미만 스타일)의 수석 시나리오 작가입니다.
-아래 제공된 [실제 보도된 네이버 랭킹 뉴스 기사 원문 및 팩트]를 100% 정밀 독해하여, 
-시청자가 0초부터 끝까지 숨죽이고 몰입할 수 있는 [고밀도 6씬 쇼츠 대본]을 JSON으로 작성하세요.
+당신은 대한민국 1위 숏폼 지식 채널(1분미만 스타일)의 메인 총괄 시나리오 작가입니다.
+아래 제공된 [실제 보도된 네이버 랭킹 뉴스 기사]를 바탕으로, 
+시청자가 0초 만에 스크롤을 멈추고 끝까지 숨죽여 몰입하는 [초몰입형 6씬 쇼츠 대본]을 JSON으로 작성하세요.
 
 [기사 원문 정보]
 - 날짜: {target_date_str}
@@ -317,41 +317,43 @@ def generate_script(topic_info: dict, force_refresh: bool = False, output_dir: s
 - 기사 본문 전문:
 {article_body[:2500]}
 
-[★ 대본 집필 절대 가드레일: 100% 자연스러운 인과관계 스토리텔링 ★]
-1. ❌ 동문서답 및 범주 불일치 절대 금지 (가장 중요):
-   - 제목/질문이 "최악의 습관/행동"을 물으면 씬 3의 답변도 반드시 "어떤 구체적인 행동/습관"이어야 합니다. (물질이나 엉뚱한 명사 지목 절대 금지!)
-   - 제목/질문이 "이유/비밀"을 물으면 씬 3의 답변도 반드시 "그 원인의 본질"이어야 합니다.
-   - 제목/질문이 "제도/비용/환급"을 물으면 씬 3의 답변도 반드시 "그 제도/비용의 실체"여야 합니다.
-   - 각 씬은 단편적인 토막글이 아니라, 시청자에게 직접 말을 건네듯 앞뒤 문맥이 물 흐르듯 자연스럽게 이어져야 합니다.
+[★ 1분미만 스타일 핵심 집필 원칙 (식상함·교과서 톤 100% 타파) ★]
 
-2. [도메인 무관 6단계 기승전결 인과 흐름] (경제, 생활, 과학, 기술, 안전, 건강 전 분야 공통):
-   - 씬 1 (01. 통념 파괴 훅): 시청자가 당연하게 믿던 일상 상식이나 관행의 허점/반전을 0초에 직격 (공백 포함 22~34자, 1문장).
-   - 씬 2 (02. 흔한 착각 환기): 왜 대다수 사람들이 이를 모른 채 방심하고 손해/위험을 겪고 있는지 배경 설명 (공백 포함 22~34자, 1문장).
-   - 씬 3 (03. 명쾌한 핵심 해답): 씬 1 질문에 대한 직접적이고 논리적인 단 1문장의 정답 (공백 포함 22~34자, 1문장).
-   - 씬 4 (04. 구체적 원리 메커니즘): 왜 그런 결과(손실, 사고, 손상, 피해)가 일어나는지 기사 원문의 구체적 원리 설명 (공백 포함 22~34자, 1문장).
-   - 씬 5 (05. 기사 팩트 수치 입증): 기사 본문에 보도된 공식 연구, 통계 수치, 손실액/초과율을 명확한 숫자로 제시 (공백 포함 22~34자, 1문장).
-   - 씬 6 (06. 명확한 실천 대처법): 오늘 당장 시청자가 내 지갑, 안전, 권리를 지키기 위해 취해야 할 구체적 행동 제시 (공백 포함 22~34자, 완전한 종결어미).
-     * CRITICAL: 마지막 씬은 절대 미완성 접속 어미('~하므로', '~때문에')로 끝내지 말고 온전한 종결어미(-습니다, -하세요)로 끝맺으십시오.
-* CRITICAL: 각 씬은 반드시 생생한 '단 1문장'(공백 포함 22~34자 이내, 최대 35자 절대 엄수, 쇼츠 화면 2줄 초과 절대 금지)이어야 하며, 6개 씬 전체 총합은 공백 포함 130~190자 내외(낭독 시간 28~35초)여야 합니다.
+1. ❌ 뉴스 리포트체/다큐멘터리체 절대 금지 vs ⭕ 찰진 1:1 대화 구어체 필수:
+   - ❌ 절대 금지: '~밝혀졌습니다', '~유발합니다', '~지목했습니다', '~올라갑니다', '~적신호입니다' 등 딱딱한 아나운서 종결어미 6연타 금지!
+   - ⭕ 필수 적용: 친구나 동생에게 진짜 꿀팁을 귀띔해 주듯 생생하고 리듬감 넘치는 구어체 종결어미 사용!
+     * 씬별 어미 예시: '~하셨죠?', '~거든요', '~인데요', '~라는 겁니다', '~하는 셈입니다', '~해보세요!'
+     * 6개 씬의 어미를 다채롭게 변주하여 지루하지 않은 말맛과 운율을 살리십시오.
 
-[★ 코어 키워드(core_keyword) 및 음성-자막 일치 규칙 ★]
-- core_keyword (★가장 중요★):
-  * 각 씬마다 시청자 뇌리에 0.1초 만에 꽂아야 할 [단 하나의 가장 결정적인 핵심 팩트 단어(2~6자)]를 먼저 도출하십시오.
-  * 화면 중앙에 거대하게 팝업되는 단어이므로, 그 단어 하나만 봐도 문장의 충격과 핵심 메시지가 0.1초 만에 이해되어야 합니다.
-  * ❌ 일반 명사 절대 금지: '고기', '제품', '구매', '일급', '사람', '우리', '행동', '경우', '모습'
-  * ⭕ 진짜 핵심 대상 (기사 분야에 맞게 도출):
-    - 경제/금융: '선택약정', '25% 할인', '낙전 수입', '환급금 1조', '자동 연장'
-    - 생활/교통: '두꺼운 패딩', '에어백 미작동', '튕겨 나감', '치명상 4배', '패딩 벗기'
-    - 과학/기술: '과충전 발열', '전극 손상', '수명 반토막', '85% 제한', '보호 모드'
-    - 안전/건강: '초록색 싹', '항산화 활성', '세포 손상', '5일간 발아', '밀폐 보관'
-- subtitle:
-  * 위에서 도출한 core_keyword를 반드시 그대로 포함해야 하며, 오직 그 단어에만 <hl>core_keyword</hl> 태그를 감싸십시오 (씬당 단 1개).
-  * 2줄(줄당 16~18자) 이내로 자연스럽게 읽히는 간결한 1문장이어야 합니다.
-- narration:
-  * 성우 TTS 낭독용 문장. subtitle의 단어, 어순과 100% 한 글자도 빠짐없이 완전히 일치해야 합니다!
-  * 모든 숫자는 순수 한글 발음으로 풀어서 작성 (예: "이십오 퍼센트" $\rightarrow$ subtitle은 "25%", "사 배" $\rightarrow$ subtitle은 "4배").
-- anchor_word: 해당 씬 narration 음성의 첫 핵심 단어 (반드시 2음절 이상 독립 명사/단어, '이', '그', '저' 등 외자 절대 금지).
-- image_prompt: 9:16 vertical photorealistic cinematic documentary 영문 프롬프트 (CRITICAL: Absolutely NO text, NO words, NO letters).
+2. 🎣 0초 일상 공감 훅 (Daily Habit Callout):
+   - 기사 제목이나 거창한 설명으로 시작하지 마십시오.
+   - 시청자가 오늘 집, 마트, 주방, 운전대, 스마트폰에서 "무심코 했던 바로 그 행동"을 0초에 직격하십시오.
+     * 예: "집에서 마늘 싹 나면 감자처럼 독 생겼다고 다 버리셨죠?"
+     * 예: "추운 날 차 탈 때 패딩 입은 채로 안전벨트 매셨죠?"
+     * 예: "고깃집 불판 바꿀 때 무심코 이렇게 하셨다면 진짜 큰일 납니다."
+
+3. 💡 직관적인 체감형 비유 (Sensory Analogy):
+   - 기사의 어려운 학술 용어(대사물질, 항산화 활성, LDL 수치, 과충전)를 그대로 읊지 마십시오.
+   - 누구나 1초 만에 머릿속에 그림이 번쩍 떠오르는 '일상의 생생한 비유'로 치환하십시오.
+     * 예: "혈관 속에 시커먼 기름때가 하수구처럼 꽉 끼는 건데요."
+     * 예: "싹을 틔우려고 마늘이 온몸의 영양소를 꽉꽉 쥐어짜 내기 때문입니다."
+     * 예: "스마트폰에 수도꼭지 틀어놓고 밤새 물 붓는 거랑 똑같습니다."
+
+4. 🔗 물 흐르듯 이어지는 6단계 스토리 라인 (동문서답 0건 보장):
+   - 씬 1 (01. 일상 공감 훅): 시청자가 당연하게 하던 일상 행동의 허점을 0초에 지목 (공백 포함 22~34자, '~하셨죠?')
+   - 씬 2 (02. 충격적 반전): 그 행동이 왜 손해/위험인지 호기심 증폭 (공백 포함 22~34자, '근데 이거 알고 보면 ~거든요')
+   - 씬 3 (03. 명쾌한 핵심 해답): 질문과 1:1로 정확히 일치하는 진짜 핵심 정답 제시 (공백 포함 22~34자, '바로 ~라는 건데요')
+   - 씬 4 (04. 직관적 비유 원리): 왜 그런지 머릿속에 상상되는 생생한 비유로 설명 (공백 포함 22~34자, '~하는 거랑 똑같은 원리입니다')
+   - 씬 5 (05. 기사 수치 팩트): 기사 본문의 공식 연구, 통계, 숫자로 신뢰도 쐐기 박기 (공백 포함 22~34자, '실제로 딱 O일째 ~가 O배나 폭발했습니다')
+   - 씬 6 (06. 구체적 실천 꿀팁): 오늘 당장 써먹을 수 있는 명쾌한 대처법 (공백 포함 22~34자, '앞으론 ~하지 마시고, 꼭 ~해보세요!')
+
+5. 📐 자막 2줄 안전 규격 (22~35자) 및 코어 키워드 규칙:
+   - 각 씬은 반드시 생생한 '단 1문장'(공백 포함 22~34자, 최대 35자 절대 엄수).
+   - core_keyword (2~6자): 화면 중앙에 팝업될 가장 충격적이고 직관적인 단어 (일반 명사 배제).
+   - subtitle: core_keyword에만 <hl>core_keyword</hl> 태그 감싸기 (씬당 단 1개).
+   - narration: subtitle과 100% 동일한 글자, 숫자는 순수 한글 발음으로 풀어서 작성.
+   - anchor_word: 해당 씬 narration의 첫 단어 (2음절 이상 독립 단어).
+   - image_prompt: 9:16 vertical photorealistic cinematic documentary 영문 프롬프트 (CRITICAL: Absolutely NO text, NO words, NO letters).
 
 반드시 순수 JSON 형식으로만 응답하세요:
 {{
@@ -366,18 +368,18 @@ def generate_script(topic_info: dict, force_refresh: bool = False, output_dir: s
   "tags": ["키워드1", "키워드2", "키워드3", "키워드4", "키워드5", "Shorts"],
   "sections": [
     {{
-      "step_title": "01. 통념 파괴 훅",
+      "step_title": "01. 일상 공감 훅",
       "core_keyword": "핵심단어",
       "anchor_word": "첫단어",
-      "narration": "0초 훅 한글 낭독 단 1문장 (22~34자)",
+      "narration": "0초 일상 공감 한글 낭독 단 1문장 (22~34자, ~하셨죠?)",
       "subtitle": "core_keyword에만 <hl>...</hl>를 감싼 1문장 (22~34자)",
       "image_prompt": "Photorealistic 8k vertical 9:16 cinematic shot... CRITICAL: Absolutely NO text, NO words."
     }},
     {{
-      "step_title": "02. 흔한 착각 환기",
+      "step_title": "02. 충격적 반전",
       "core_keyword": "핵심단어",
       "anchor_word": "첫단어",
-      "narration": "착각 환기 한글 낭독 단 1문장 (22~34자)",
+      "narration": "호기심 증폭 반전 한글 낭독 단 1문장 (22~34자, ~거든요/~인데요)",
       "subtitle": "core_keyword에만 <hl>...</hl>를 감싼 1문장 (22~34자)",
       "image_prompt": "Photorealistic 8k vertical 9:16 cinematic shot... CRITICAL: Absolutely NO text, NO words."
     }},
@@ -390,10 +392,10 @@ def generate_script(topic_info: dict, force_refresh: bool = False, output_dir: s
       "image_prompt": "Photorealistic 8k vertical 9:16 cinematic shot... CRITICAL: Absolutely NO text, NO words."
     }},
     {{
-      "step_title": "04. 구체적 원리 메커니즘",
+      "step_title": "04. 직관적 비유 원리",
       "core_keyword": "핵심단어",
       "anchor_word": "첫단어",
-      "narration": "원리 기전 한글 낭독 단 1문장 (22~34자)",
+      "narration": "머릿속에 그려지는 비유 한글 낭독 단 1문장 (22~34자, ~하는 셈입니다/~똑같습니다)",
       "subtitle": "core_keyword에만 <hl>...</hl>를 감싼 1문장 (22~34자)",
       "image_prompt": "Photorealistic 8k vertical 9:16 cinematic shot... CRITICAL: Absolutely NO text, NO words."
     }},
@@ -401,15 +403,15 @@ def generate_script(topic_info: dict, force_refresh: bool = False, output_dir: s
       "step_title": "05. 기사 팩트 수치 입증",
       "core_keyword": "핵심단어",
       "anchor_word": "첫단어",
-      "narration": "구체적 수치 팩트 한글 낭독 단 1문장 (22~34자)",
+      "narration": "생생한 수치 입증 한글 낭독 단 1문장 (22~34자, 숫자 한글 발음)",
       "subtitle": "core_keyword에만 <hl>...</hl>를 감싼 1문장 (22~34자)",
       "image_prompt": "Photorealistic 8k vertical 9:16 cinematic shot... CRITICAL: Absolutely NO text, NO words."
     }},
     {{
-      "step_title": "06. 명확한 실천 대처법",
+      "step_title": "06. 구체적 실천 꿀팁",
       "core_keyword": "핵심단어",
       "anchor_word": "첫단어",
-      "narration": "명쾌한 실천법 한글 낭독 단 1문장 (22~34자, 완벽한 종결어미)",
+      "narration": "오늘 당장 써먹는 꿀팁 한글 낭독 단 1문장 (22~34자, ~해보세요/~보세요)",
       "subtitle": "core_keyword에만 <hl>...</hl>를 감싼 1문장 (22~34자)",
       "image_prompt": "Photorealistic 8k vertical 9:16 cinematic shot... CRITICAL: Absolutely NO text, NO words."
     }}
@@ -423,7 +425,7 @@ def generate_script(topic_info: dict, force_refresh: bool = False, output_dir: s
             resp = client.models.generate_content(
                 model=config.MODEL_FAST,
                 contents=prompt,
-                config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.2)
+                config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.35)
             )
             raw_text = clean_json_str(safe_get_text(resp))
             parsed = json.loads(raw_text)
