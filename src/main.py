@@ -40,7 +40,7 @@ from scraper import get_naver_ranking_by_date
 from topic_sourcing import select_best_killer_topic
 from script_gen import generate_script, generate_youtube_metadata
 from tts_gen import process_audio_and_sync
-from renderer import render_news_short
+from renderer import render_news_short, resolve_bgm_track
 from upload_youtube import upload_video
 
 def determine_publish_mode(schedule_hour_kst: int = 19, schedule_min_kst: int = 0) -> tuple:
@@ -123,7 +123,8 @@ def run_pipeline(
     )
 
     # Step 6: 유튜브 동적 메타데이터 생성 및 매일 저녁 7시(19:00 KST) 예약 업로드
-    yt_meta = generate_youtube_metadata(script_data, topic_info)
+    chosen_bgm = resolve_bgm_track(category=topic_info.get("category"), bgm_override=bgm, date_str=formatted_date)
+    yt_meta = generate_youtube_metadata(script_data, topic_info, bgm_name=chosen_bgm)
     upload_url = None
     scheduled_kst = None
     if not skip_upload:

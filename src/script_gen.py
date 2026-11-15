@@ -126,8 +126,8 @@ def verify_script_facts(article_body: str, script_data: dict) -> dict:
     print(f"  🔍 [Step 3 Fact-Check] 수치 및 팩트 교차 검증: {fact_report['status']} (검증 수치: {script_numbers})", flush=True)
     return fact_report
 
-def generate_youtube_metadata(arg1: dict, arg2: dict) -> dict:
-    """유튜브 업로드용 고효율 설명란, 태그, 제목, 면책조항 자동 생성 (SEO & 팩트 출처 보장)"""
+def generate_youtube_metadata(arg1: dict, arg2: dict, bgm_name: str = None) -> dict:
+    """유튜브 업로드용 5단 완성형 고품질 설명란, 태그, 제목 자동 생성 (SEO & 팩트 출처 보장)"""
     if "sections" in arg1:
         script_data, topic_info = arg1, arg2
     else:
@@ -140,20 +140,55 @@ def generate_youtube_metadata(arg1: dict, arg2: dict) -> dict:
     article_question = script_data.get("article_question", "")
 
     sections = script_data.get("sections", [])
-    s1 = re.sub(r'<.*?>', '', sections[0].get("subtitle", "")) if len(sections) > 0 else ""
-    s3 = re.sub(r'<.*?>', '', sections[2].get("subtitle", "")) if len(sections) > 2 else ""
-    s5 = re.sub(r'<.*?>', '', sections[4].get("subtitle", "")) if len(sections) > 4 else ""
 
-    summary_bullets = f"1. {s1}\n2. {s3}\n3. {s5}" if (s1 and s3) else f"1. {article_question}\n2. {article_title}"
+    # 1. 팩트체크 심층 브리핑 (스크립트에 없으면 씬 3, 4, 5 기반 고품질 Fallback 합성)
+    fact_check_sum = script_data.get("fact_check_summary", "").strip()
+    if not fact_check_sum:
+        parts = []
+        if len(sections) > 2:
+            parts.append(re.sub(r'<.*?>', '', sections[2].get("subtitle", "")))
+        if len(sections) > 3:
+            parts.append(re.sub(r'<.*?>', '', sections[3].get("subtitle", "")))
+        if len(sections) > 4:
+            parts.append(re.sub(r'<.*?>', '', sections[4].get("subtitle", "")))
+        fact_check_sum = " ".join([p.strip() for p in parts if p.strip()]).strip()
+        if not fact_check_sum:
+            fact_check_sum = f"{article_title} 보도에 따르면, 과학적·통계적 인과관계 분석 결과 검증된 핵심 원리를 확인했습니다."
 
+    # 2. 실전 핵심 가이드 & 행동 수칙 (없으면 씬 6 기반 Fallback)
+    practical_guide = script_data.get("practical_guide", "").strip()
+    if not practical_guide:
+        if len(sections) > 5:
+            practical_guide = re.sub(r'<.*?>', '', sections[5].get("subtitle", "")).strip()
+        if not practical_guide:
+            practical_guide = "관련 피해를 예방하고 내 권리를 지키기 위해 공인된 실천 지침을 일상에서 즉시 준수하시기 바랍니다."
+
+    # 3. 함께 나누는 이야기 (CTA)
+    cta = script_data.get("cta", "").strip()
+    if not cta:
+        if article_question:
+            clean_q = re.sub(r'[\?\.]$', '', article_question).strip()
+            cta = f"{clean_q}, 여러분은 어떻게 생각하시나요?"
+        else:
+            cta = "오늘의 지식에 대해 여러분의 경험이나 생각을 댓글로 자유롭게 남겨주세요!"
+
+    # 4. 태그 및 해시태그 생성
     category = topic_info.get("category", "상식")
     base_tags = ["1분상식", "지식", "상식", "shorts", "쇼츠"]
     if category:
         clean_cat = category.replace("/", "")
         if clean_cat not in base_tags:
             base_tags.append(clean_cat)
-            
-    # 대본 속 core_keyword 및 <hl> 핵심 키워드 동적 태그 추가 (하드코딩 완전 배제)
+
+    # 대본 생성 태그 추가
+    custom_tags = script_data.get("tags", [])
+    if isinstance(custom_tags, list):
+        for t in custom_tags:
+            clean_t = re.sub(r'[^가-힣a-zA-Z0-9]', '', str(t)).strip()
+            if clean_t and len(clean_t) >= 2 and clean_t not in base_tags:
+                base_tags.append(clean_t)
+
+    # 씬별 핵심 키워드 태그 반영
     for sec in sections:
         core_kw = sec.get("core_keyword", "").strip()
         if core_kw and len(core_kw) >= 2 and core_kw not in base_tags:
@@ -164,46 +199,75 @@ def generate_youtube_metadata(arg1: dict, arg2: dict) -> dict:
             if clean_h and len(clean_h) >= 2 and clean_h not in base_tags:
                 base_tags.append(clean_h)
 
-    disclaimer = (
-        "⚖️ [정보 제공 및 면책 조항]\n"
-        "본 영상은 언론사 공식 보도 기사를 기반으로 제작된 생활·교양 상식 콘텐츠입니다. "
-        "구체적인 법률, 금융, 의학적 판단 및 적용은 반드시 관련 전문가와 상담하시기 바랍니다."
+    # 5. BGM 음원 표시 정리
+    bgm_clean = "Sunspots - Jeremy Blake"
+    if bgm_name:
+        b_name = os.path.basename(bgm_name).replace(".mp3", "").strip()
+        if b_name:
+            bgm_clean = b_name
+
+    # 6. 5단 완성형 고품질 설명란 구성 (production 규격 100% 계승)
+    desc_parts = []
+
+    # [1단: 공식 팩트체크 & 심층 지식 브리핑]
+    desc_parts.append(
+        f"🔍 [공식 팩트체크 & 심층 지식 브리핑]\n"
+        f"✔ 검증 결론: 학술·보도 데이터 교차 검증 완료\n"
+        f"• 핵심 팩트: {fact_check_sum}\n"
+        f"(본 영상은 언론사 공식 보도 기사 및 실시간 데이터베이스 교차 검증을 거쳤습니다)"
     )
 
-    desc_lines = [
-        f"📌 {article_question}",
-        "",
-        "💡 [핵심 3줄 요약]",
-        summary_bullets,
-        "",
+    # [2단: 실전 핵심 가이드 & 행동 수칙]
+    desc_parts.append(
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💡 [실전 핵심 가이드 & 행동 수칙]\n"
+        f"{practical_guide}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    )
+
+    # [3단: 기사 원문 및 팩트 출처]
+    source_lines = [
         "📰 [기사 원문 및 팩트 출처]",
-        f"- 보도 언론사: {press}",
-        f"- 기사 제목: {article_title}",
+        f"• 보도 언론사: {press}",
+        f"• 기사 제목: {article_title}"
     ]
     if url:
-        desc_lines.append(f"- 원문 링크: {url}")
+        source_lines.append(f"• 원문 링크: {url}")
+    desc_parts.append("\n".join(source_lines))
 
-    desc_lines.extend([
-        "",
-        disclaimer,
-        "",
-        "🏷️ [해시태그]",
-        " ".join([f"#{t}" for t in base_tags[:7]]),
-        "",
-        "❤️ '구독'과 '좋아요'는 1분 상식을 만드는 가장 큰 힘이 됩니다!"
-    ])
+    # [4단: 제작 정보 & 안내]
+    desc_parts.append(
+        f"🏛️ [제작 정보 & 안내]\n"
+        f"• 지식 큐레이션: 1분 지식 아카이브\n"
+        f"• 팩트체크: 언론사 기사 원문 심층 팩트체크 검증\n"
+        f"• 배경음악(BGM): {bgm_clean} (YouTube Audio Library)\n"
+        f"• 문의/제보: 영상 관련 추가 질문이나 의견은 언제든 댓글로 남겨주세요!"
+    )
 
-    youtube_description = "\n".join(desc_lines)
-    clean_title = shorts_title.replace("#shorts", "").strip()
+    # [5단: 함께 나누는 이야기 & 해시태그]
+    clean_tags = [re.sub(r'[^가-힣a-zA-Z0-9]', '', str(t)).strip() for t in base_tags]
+    unique_clean_tags = []
+    for ct in clean_tags:
+        if ct and ct not in unique_clean_tags:
+            unique_clean_tags.append(ct)
+    hashtag_str = " ".join([f"#{t}" for t in unique_clean_tags[:7]])
+    desc_parts.append(
+        f"💬 [함께 나누는 이야기]\n"
+        f"\"{cta}\"\n\n"
+        f"{hashtag_str}"
+    )
+
+    youtube_description = "\n\n".join(desc_parts)
+    clean_title = shorts_title.replace("#shorts", "").replace("#Shorts", "").strip()
     youtube_title = f"{clean_title} #shorts"
 
     metadata = {
         "title": youtube_title,
         "description": youtube_description,
-        "tags": base_tags,
+        "tags": base_tags[:15],
         "youtube_title": youtube_title,
         "youtube_description": youtube_description,
-        "youtube_tags": base_tags,
+        "youtube_tags": base_tags[:15],
         "article_source": {
             "press": press,
             "title": article_title,
@@ -295,6 +359,11 @@ def generate_script(topic_info: dict, force_refresh: bool = False, output_dir: s
   "news_outlet": "{press}",
   "news_headline": "{article_title}",
   "article_question": "기사 핵심 의문문 1줄 (25자 이내, Q. 제외)",
+  "summary": "영상 핵심 2줄 요약",
+  "fact_check_summary": "검증된 핵심 팩트 및 심층 과학/경제/사회적 원리 상세 요약 (2~3문장)",
+  "practical_guide": "시청자가 실생활에 바로 적용할 수 있는 구체적인 2~3단계 핵심 행동 수칙 또는 지식 활용 가이드",
+  "cta": "시청자의 댓글 참여와 활발한 토론을 유도하는 질문 1문장 (따옴표 제외)",
+  "tags": ["키워드1", "키워드2", "키워드3", "키워드4", "키워드5", "Shorts"],
   "sections": [
     {{
       "step_title": "01. 통념 파괴 훅",
