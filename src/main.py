@@ -115,11 +115,12 @@ def run_pipeline(
     )
     print(f"  -> 오디오 싱크 완료: 총 {sum(durations):.1f}초 (씬별: {durations})", flush=True)
 
-    # Step 5: 3단 상시 인식 헤더 & 48pt 하이라이트 자막 렌더링
-    print("\n[Step 5] 3단 상시 인식 헤더 및 48pt 자막 렌더링 중 (엔딩 슬라이드 제거)...", flush=True)
+    # Step 5: 4-Tier 폭포수 비주얼 에셋 소싱 & 하이브리드 비디오 렌더링
+    print("\n[Step 5] 4-Tier 비주얼 소싱 및 하이브리드 비디오 렌더링 중...", flush=True)
     video_path = render_news_short(
         script_data, durations, audio_path, output_dir, formatted_date,
-        category=topic_info.get("category"), bgm_filename=bgm, force_refresh=force_refresh
+        category=topic_info.get("category"), bgm_filename=bgm, force_refresh=force_refresh,
+        topic_info=topic_info
     )
 
     # Step 6: 유튜브 동적 메타데이터 생성 및 매일 저녁 7시(19:00 KST) 예약 업로드

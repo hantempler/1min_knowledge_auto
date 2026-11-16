@@ -161,16 +161,24 @@ def process_audio_and_sync(script_data: dict, output_dir: str, voice_name: str =
     return out_wav, durations
 
 if __name__ == "__main__":
+    import argparse
+    from datetime import datetime
     if sys.stdout and hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
-    test_date = "2026-11-12"
-    clean_d = test_date.replace("-", "")
+    parser = argparse.ArgumentParser(description="Step 4: TTS 및 Whisper 싱크 정렬기")
+    parser.add_argument("--date", type=str, default=datetime.now().strftime("%Y-%m-%d"), help="대상 일자 (YYYY-MM-DD)")
+    parser.add_argument("--force", action="store_true", help="기존 오디오 무시하고 강제 재생성")
+    args = parser.parse_args()
+
+    clean_d = args.date.replace("-", "")
     script_file = os.path.join(config.DATA_DIR, f"script_{clean_d}.json")
     if os.path.exists(script_file):
         with open(script_file, "r", encoding="utf-8") as f:
             s_data = json.load(f)
-        out_d = os.path.join(config.DATA_DIR, test_date)
-        wav_p, durs = process_audio_and_sync(s_data, out_d, voice_name="Puck", force_refresh=True)
-        print(f"\n[오디오 싱크 결과] 오디오: {wav_p}, 씬별 길이: {durs}")
+        out_d = os.path.join(config.DATA_DIR, args.date)
+        wav_p, durs = process_audio_and_sync(s_data, out_d, voice_name="Puck", force_refresh=args.force)
+        print(f"\n[Step 4 오디오 싱크 완료] 오디오: {wav_p}")
+        print(f"  총 소요 시간: {sum(durs):.2f}초")
+        print(f"  씬별 durations: {durs}")
     else:
         print(f"대본 파일 부재: {script_file}")

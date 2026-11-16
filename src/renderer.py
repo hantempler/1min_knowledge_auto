@@ -348,9 +348,9 @@ def create_subtitle_overlay(
     img = Image.new("RGBA", (1080, 1920), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
-    # 1. 상단 은은한 투명 딤 비네팅 (y: 0~380)
-    for y in range(380):
-        alpha = int(170 * (1 - y / 380) ** 1.5)
+    # 1. 상단 은은한 투명 딤 비네팅 (y: 0~460)
+    for y in range(460):
+        alpha = int(170 * (1 - y / 460) ** 1.5)
         draw.line([(0, y), (1080, y)], fill=(0, 0, 0, alpha))
 
     # 2. 하단 자막 영역 황금존 딤 비네팅 (y: 1220~1660)
@@ -359,28 +359,27 @@ def create_subtitle_overlay(
         alpha = int(145 * max(0, rel))
         draw.line([(0, y), (1080, y)], fill=(0, 0, 0, alpha))
 
-    # 3. 상단 채널 브랜딩: 1분상식 (36pt Bold 스카이블루 #38BDF8)
-    font_ch = ImageFont.truetype(font_path, 36)
-    ch_text = "1분상식"
-    cw = draw.textlength(ch_text, font=font_ch)
-    draw.text(((1080 - cw) / 2, 75), ch_text, font=font_ch, fill=(56, 189, 248), stroke_width=3, stroke_fill=(0, 0, 0, 220))
+    # 3. 상단 브랜드 라벨: 좌측 상단 골드 불릿(●) + Gmarket Sans TTF Bold 36pt (상단 Safe Zone 적용)
+    brand_y = 145
+    gold_color = (255, 204, 0)
+    font_brand = ImageFont.truetype(font_path, 36)
+    draw.ellipse([60, brand_y - 9, 78, brand_y + 9], fill=gold_color)
+    draw.text((92, brand_y), "1분상식", fill=(245, 245, 250), font=font_brand, anchor="lm")
 
-    # 4. 상단 헤더: 의미 단위 자연스러운 2줄 개행
+    # 4. 상단 헤더: 1행/2행 전체 노란색(#FFE600), 54pt 동일 확대 볼드, 6px 블랙 스트로크 (상단 Safe Zone 적용)
     q_raw = article_question.strip() if article_question else "오늘 꼭 알아야 할 핵심 상식"
     q_lines = format_header_lines(q_raw)
+    font_q = ImageFont.truetype(font_path, 54)
 
     if len(q_lines) == 2:
-        font_q1 = ImageFont.truetype(font_path, 38)
-        lw1 = draw.textlength(q_lines[0], font=font_q1)
-        draw.text(((1080 - lw1) / 2, 135), q_lines[0], font=font_q1, fill=(255, 255, 255), stroke_width=4, stroke_fill=(0, 0, 0, 220))
+        lw1 = draw.textlength(q_lines[0], font=font_q)
+        draw.text(((1080 - lw1) / 2, 250), q_lines[0], font=font_q, fill=(255, 230, 0), stroke_width=6, stroke_fill=(0, 0, 0, 240))
 
-        font_q2 = ImageFont.truetype(font_path, 44)
-        lw2 = draw.textlength(q_lines[1], font=font_q2)
-        draw.text(((1080 - lw2) / 2, 190), q_lines[1], font=font_q2, fill=(255, 230, 0), stroke_width=4, stroke_fill=(0, 0, 0, 220))
+        lw2 = draw.textlength(q_lines[1], font=font_q)
+        draw.text(((1080 - lw2) / 2, 315), q_lines[1], font=font_q, fill=(255, 230, 0), stroke_width=6, stroke_fill=(0, 0, 0, 240))
     else:
-        font_q = ImageFont.truetype(font_path, 40)
         lw = draw.textlength(q_lines[0], font=font_q)
-        draw.text(((1080 - lw) / 2, 150), q_lines[0], font=font_q, fill=(255, 230, 0), stroke_width=4, stroke_fill=(0, 0, 0, 220))
+        draw.text(((1080 - lw) / 2, 275), q_lines[0], font=font_q, fill=(255, 230, 0), stroke_width=6, stroke_fill=(0, 0, 0, 240))
 
     # 5. 하단 본문 자막 (황금 리딩 존 y=1340~1410, 무조건 1~2줄, 48pt 고정, hl=노란색 #FFE600)
     if sub_text:
@@ -412,9 +411,11 @@ def render_news_short(
     script_data: dict, durations: list, onetake_audio_path: str,
     output_dir: str, target_date_str: str,
     category: str = None, bgm_filename: str = None,
-    force_refresh: bool = False
+    force_refresh: bool = False,
+    visual_assets: list = None,
+    topic_info: dict = None
 ) -> str:
-    """Step 5 전체 렌더링 파이프라인 (풀스크린 몰입형 + 키워드 애니메이션 팝업)"""
+    """Step 5 전체 렌더링 파이프라인 (풀스크린 몰입형 + 키워드 애니메이션 팝업 + 비디오/실사 하이브리드 지원)"""
     temp_dir = os.path.join(output_dir, "temp")
     os.makedirs(temp_dir, exist_ok=True)
     font_path = get_font_path()
@@ -424,12 +425,40 @@ def render_news_short(
     output_mp4 = os.path.join(output_dir, f"{target_date_str}.mp4")
     final_shorts_mp4 = os.path.join(output_dir, "final_shorts.mp4")
 
-    print("\n  🎬 [Step 5 Renderer] 9:16 실사 이미지 확보 중...", flush=True)
-    image_paths = []
-    for idx, sec in enumerate(sections):
-        img_p = os.path.join(temp_dir, f"image_{idx}.jpg")
-        generate_image(sec["image_prompt"], img_p, force_refresh=force_refresh)
-        image_paths.append(img_p)
+    # 4-Tier 폭포수 비주얼 에셋 확보
+    if not visual_assets:
+        report_json = os.path.join(temp_dir, "asset_sourcing_report.json")
+        if os.path.exists(report_json):
+            try:
+                with open(report_json, "r", encoding="utf-8") as rf:
+                    cached_assets = json.load(rf)
+                if len(cached_assets) == len(sections):
+                    visual_assets = cached_assets
+                    print(f"  🎬 [Step 5 Renderer] 기존 소싱된 에셋 재사용: {len(visual_assets)}개", flush=True)
+            except Exception:
+                pass
+
+    if not visual_assets:
+        try:
+            from asset_sourcer import prepare_visual_assets
+        except ImportError:
+            try:
+                from src.asset_sourcer import prepare_visual_assets
+            except ImportError:
+                prepare_visual_assets = None
+
+        if prepare_visual_assets and topic_info:
+            print("\n  🎬 [Step 5 Renderer] 4-Tier 폭포수 비주얼 에셋 소싱 가동...", flush=True)
+            visual_assets = prepare_visual_assets(script_data, topic_info, output_dir, force_refresh=force_refresh)
+
+    # 폴백: visual_assets가 없으면 기존 방식(100% AI 이미지) 안전 대기
+    if not visual_assets:
+        print("\n  🎬 [Step 5 Renderer] 9:16 실사 AI 이미지 확보 중...", flush=True)
+        visual_assets = []
+        for idx, sec in enumerate(sections):
+            img_p = os.path.join(temp_dir, f"image_{idx}.jpg")
+            generate_image(sec["image_prompt"], img_p, force_refresh=force_refresh)
+            visual_assets.append({"type": "ai_art", "path": img_p})
 
     print("  🎞️ [Step 5 Renderer] 풀스크린 몰입형 헤더, 자막 및 키워드 애니메이션 인코딩 중...", flush=True)
     ts_chunks = []
@@ -437,7 +466,9 @@ def render_news_short(
     for idx in range(len(sections)):
         sec = sections[idx]
         dur = float(durations[idx])
-        img_in = image_paths[idx]
+        asset = visual_assets[idx] if idx < len(visual_assets) else {"type": "ai_art", "path": os.path.join(temp_dir, f"image_{idx}.jpg")}
+        asset_type = asset.get("type", "ai_art")
+        asset_path = asset.get("path")
         ts_out = os.path.join(temp_dir, f"chunk_{idx}.ts")
         ov_path = os.path.join(temp_dir, f"overlay_s{idx}.png")
         callout_path = os.path.join(temp_dir, f"callout_s{idx}.png")
@@ -471,47 +502,85 @@ def render_news_short(
         st_call = 0.70
         motion_type = idx % 3
 
-        if c_text and dur >= 2.0:
-            if motion_type == 1:
-                # 모션 1: 레프트 슬라이드 인 (0.7s~0.90s 왼쪽에서 날아와 중앙 정착 후 씬 끝까지 고정)
-                callout_overlay_expr = f"[bg][2:v]overlay=x='min(0, max(0, 0.90-t)*(-1200))':y=0:enable='gte(t,{st_call})'[bg_call]"
-            elif motion_type == 2:
-                # 모션 2: 바텀 슬라이드 업 (0.7s~0.95s 아래에서 부드럽게 상승 후 씬 끝까지 고정)
-                callout_overlay_expr = f"[bg][2:v]overlay=x=0:y='min(0, max(0, 0.95-t)*1000)':enable='gte(t,{st_call})'[bg_call]"
-            else:
-                # 모션 3: 임팩트 비트 팝 (0.7s 발화 순간 쾅! 박힌 뒤 씬 끝까지 고정)
-                callout_overlay_expr = f"[bg][2:v]overlay=0:0:enable='gte(t,{st_call})'[bg_call]"
+        if asset_type == "video" and os.path.exists(asset_path):
+            # Tier 1 비디오 클립 청크 인코딩 (원본 모션 유지 + 헤더/자막 오버레이 합성)
+            if c_text and dur >= 2.0:
+                if motion_type == 1:
+                    callout_overlay_expr = f"[bg][2:v]overlay=x='min(0, max(0, 0.90-t)*(-1200))':y=0:enable='gte(t,{st_call})'[bg_call]"
+                elif motion_type == 2:
+                    callout_overlay_expr = f"[bg][2:v]overlay=x=0:y='min(0, max(0, 0.95-t)*1000)':enable='gte(t,{st_call})'[bg_call]"
+                else:
+                    callout_overlay_expr = f"[bg][2:v]overlay=0:0:enable='gte(t,{st_call})'[bg_call]"
 
-            filter_str = (
-                f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
-                f"zoompan=z='{z_expr}':d={total_frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920,"
-                f"fps=24,format=yuv420p[bg];"
-                f"{callout_overlay_expr};"
-                f"[bg_call][1:v]overlay=0:0[v]"
-            )
-            cmd = [
-                "ffmpeg", "-y", "-loop", "1", "-i", img_in, "-i", ov_path, "-i", callout_path,
-                "-t", str(dur),
-                "-filter_complex", filter_str,
-                "-map", "[v]",
-                "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-preset", "ultrafast",
-                "-an", ts_out
-            ]
+                filter_str = (
+                    f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
+                    f"fps=24,format=yuv420p[bg];"
+                    f"{callout_overlay_expr};"
+                    f"[bg_call][1:v]overlay=0:0[v]"
+                )
+                cmd = [
+                    "ffmpeg", "-y", "-i", asset_path, "-i", ov_path, "-i", callout_path,
+                    "-t", str(dur),
+                    "-filter_complex", filter_str,
+                    "-map", "[v]",
+                    "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-preset", "ultrafast",
+                    "-an", ts_out
+                ]
+            else:
+                filter_str = (
+                    f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
+                    f"fps=24,format=yuv420p[bg];"
+                    f"[bg][1:v]overlay=0:0[v]"
+                )
+                cmd = [
+                    "ffmpeg", "-y", "-i", asset_path, "-i", ov_path,
+                    "-t", str(dur),
+                    "-filter_complex", filter_str,
+                    "-map", "[v]",
+                    "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-preset", "ultrafast",
+                    "-an", ts_out
+                ]
         else:
-            filter_str = (
-                f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
-                f"zoompan=z='{z_expr}':d={total_frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920,"
-                f"fps=24,format=yuv420p[bg];"
-                f"[bg][1:v]overlay=0:0[v]"
-            )
-            cmd = [
-                "ffmpeg", "-y", "-loop", "1", "-i", img_in, "-i", ov_path,
-                "-t", str(dur),
-                "-filter_complex", filter_str,
-                "-map", "[v]",
-                "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-preset", "ultrafast",
-                "-an", ts_out
-            ]
+            # Tier 0, 2, 3 스틸 이미지/카드 ZoomPan 인코딩
+            img_in = asset_path
+            if c_text and dur >= 2.0:
+                if motion_type == 1:
+                    callout_overlay_expr = f"[bg][2:v]overlay=x='min(0, max(0, 0.90-t)*(-1200))':y=0:enable='gte(t,{st_call})'[bg_call]"
+                elif motion_type == 2:
+                    callout_overlay_expr = f"[bg][2:v]overlay=x=0:y='min(0, max(0, 0.95-t)*1000)':enable='gte(t,{st_call})'[bg_call]"
+                else:
+                    callout_overlay_expr = f"[bg][2:v]overlay=0:0:enable='gte(t,{st_call})'[bg_call]"
+
+                filter_str = (
+                    f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
+                    f"zoompan=z='{z_expr}':d={total_frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920,"
+                    f"fps=24,format=yuv420p[bg];"
+                    f"{callout_overlay_expr};"
+                    f"[bg_call][1:v]overlay=0:0[v]"
+                )
+                cmd = [
+                    "ffmpeg", "-y", "-loop", "1", "-i", img_in, "-i", ov_path, "-i", callout_path,
+                    "-t", str(dur),
+                    "-filter_complex", filter_str,
+                    "-map", "[v]",
+                    "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-preset", "ultrafast",
+                    "-an", ts_out
+                ]
+            else:
+                filter_str = (
+                    f"[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,"
+                    f"zoompan=z='{z_expr}':d={total_frames}:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=1080x1920,"
+                    f"fps=24,format=yuv420p[bg];"
+                    f"[bg][1:v]overlay=0:0[v]"
+                )
+                cmd = [
+                    "ffmpeg", "-y", "-loop", "1", "-i", img_in, "-i", ov_path,
+                    "-t", str(dur),
+                    "-filter_complex", filter_str,
+                    "-map", "[v]",
+                    "-c:v", "libx264", "-profile:v", "high", "-pix_fmt", "yuv420p", "-preset", "ultrafast",
+                    "-an", ts_out
+                ]
         subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         ts_chunks.append(ts_out)
 
@@ -595,18 +664,36 @@ def render_news_short(
     return output_mp4
 
 if __name__ == "__main__":
+    import argparse
+    from datetime import datetime
     if sys.stdout and hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
-    test_date = "2026-11-13"
-    clean_d = test_date.replace("-", "")
+    parser = argparse.ArgumentParser(description="Step 5-B: 비디오 최종 렌더러")
+    parser.add_argument("--date", type=str, default=datetime.now().strftime("%Y-%m-%d"), help="대상 일자 (YYYY-MM-DD)")
+    parser.add_argument("--bgm", type=str, default=None, help="BGM 파일명 오버라이드")
+    parser.add_argument("--force", action="store_true", help="기존 캐시 무시 강제 렌더링")
+    args = parser.parse_args()
+
+    clean_d = args.date.replace("-", "")
     script_file = os.path.join(config.DATA_DIR, f"script_{clean_d}.json")
+    topic_file = os.path.join(config.DATA_DIR, f"topic_selection_{clean_d}.json")
+    t_info = json.load(open(topic_file, "r", encoding="utf-8")) if os.path.exists(topic_file) else {}
+
     if os.path.exists(script_file):
         with open(script_file, "r", encoding="utf-8") as f:
             s_data = json.load(f)
-        out_d = os.path.join(config.DATA_DIR, test_date)
+        out_d = os.path.join(config.DATA_DIR, args.date)
         ts_file = os.path.join(out_d, "temp", "timestamps.json")
         if os.path.exists(ts_file):
             with open(ts_file, "r", encoding="utf-8") as f:
                 ts_data = json.load(f)
             wav_p = os.path.join(out_d, "temp", "audio_onetake.wav")
-            render_news_short(s_data, ts_data["durations"], wav_p, out_d, test_date)
+            render_news_short(
+                s_data, ts_data["durations"], wav_p, out_d, args.date,
+                category=t_info.get("category"), bgm_filename=args.bgm, force_refresh=args.force,
+                topic_info=t_info
+            )
+        else:
+            print(f"타임스탬프 파일 부재: {ts_file}")
+    else:
+        print(f"대본 파일 부재: {script_file}")

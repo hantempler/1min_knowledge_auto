@@ -153,9 +153,20 @@ def select_best_killer_topic(target_date_str: str, force_refresh: bool = False) 
     return selection
 
 if __name__ == "__main__":
+    import argparse
+    from datetime import datetime
     if sys.stdout and hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
-    test_date = "2026-11-12"
-    sel = select_best_killer_topic(test_date)
-    print("\n[토픽 선별 결과]")
+    parser = argparse.ArgumentParser(description="Step 2: 1위 킬러 토픽 선별기")
+    parser.add_argument("--date", type=str, default=datetime.now().strftime("%Y-%m-%d"), help="수집 대상 일자 (YYYY-MM-DD)")
+    parser.add_argument("--force", action="store_true", help="기존 캐시 무시하고 강제 재선정")
+    args = parser.parse_args()
+
+    sel = select_best_killer_topic(args.date, force_refresh=args.force)
+    print("\n[Step 2 토픽 선별 결과]")
+    print(f"  언론사: [{sel.get('press')}]")
+    print(f"  기사제목: {sel.get('selected_article_title')}")
+    print(f"  쇼츠제목: {sel.get('shorts_title')}")
+    print(f"  카테고리: {sel.get('category')}")
+    print(f"  본문길이: {len(sel.get('article_body', ''))}자")
     print(json.dumps(sel, ensure_ascii=False, indent=2))

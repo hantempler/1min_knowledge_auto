@@ -91,6 +91,78 @@ def upload_video(
         return None
 
 if __name__ == "__main__":
-    # Test upload
-    test_video = os.path.join(config.DATA_DIR, "final_shorts.mp4")
-    upload_video(test_video, "[테스트] 1분 상식", "이것은 테스트 업로드입니다.")
+    import argparse
+    import json
+    import datetime
+    from zoneinfo import ZoneInfo
+    from script_gen import generate_youtube_metadata
+
+    parser = argparse.ArgumentParser(description="Step 6: 유튜브 쇼츠 업로더")
+    parser.add_argument("--date", type=str, default=datetime.datetime.now().strftime("%Y-%m-%d"), help="대상 일자 (YYYY-MM-DD)")
+    parser.add_argument("--mode", type=str, default="auto", choices=["auto", "public", "private"], help="발행 모드 (auto: 19시 이전 당일 19시 예약, 이후 즉시공개)")
+    parser.add_argument("--schedule-hour", type=int, default=19, help="예약 공개 시간 (KST 기준 시)")
+    args = parser.parse_args()
+
+    clean_d = args.date.replace("-", "")
+    script_file = os.path.join(config.DATA_DIR, f"script_{clean_d}.json")
+    topic_file = os.path.join(config.DATA_DIR, f"topic_selection_{clean_d}.json")
+    video_file = os.path.join(config.DATA_DIR, args.date, f"{args.date}.mp4")
+
+    if not os.path.exists(video_file):
+        video_file = os.path.join(config.DATA_DIR, args.date, "final_shorts.mp4")
+
+    if not os.path.exists(video_file):
+        print(f"Error: 렌더링된 비디오 파일이 없습니다 ({video_file})")
+        sys.exit(1)
+
+    t_info = json.load(open(topic_file, "r", encoding="utf-8")) if os.path.exists(topic_file) else {}
+    s_data = json.load(open(script_file, "r", encoding="utf-8")) if os.path.exists(script_file) else {}
+
+    yt_meta = generate_youtube_metadata(s_data, t_info, bgm_name="Beyond - Patrick Patrikios.mp3")
+    yt_title = yt_meta.get("title") or yt_meta.get("youtube_title") or f"{t_info.get('shorts_title', '1분 상식')} #shorts"
+    yt_desc = yt_meta.get("description") or yt_meta.get("youtube_description") or ""
+    yt_tags = yt_meta.get("tags") or yt_meta.get("youtube_tags") or ["1분상식", "쇼츠"]
+
+    now_kst = datetime.datetime.now(ZoneInfo("Asia/Seoul"))
+    target_kst = now_kst.replace(hour=args.schedule_hour, minute=0, second=0, microsecond=0)
+
+    if args.mode == "public":
+        privacy_status = "public"
+        publish_at_utc = None
+        scheduled_str = None
+        print("  📢 [발행 모드] 즉시 전체 공개 (public)")
+    elif args.mode == "private":
+        privacy_status = "private"
+        publish_at_utc = None
+        scheduled_str = None
+        print("  🔒 [발행 모드] 비공개 (private)")
+    else:
+        # auto 모드
+        if now_kst < target_kst:
+            privacy_status = "private"
+            target_utc = target_kst.astimezone(ZoneInfo("UTC"))
+            publish_at_utc = target_utc.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+            scheduled_str = target_kst.strftime("%Y-%m-%d %H:%M:%S")
+            print(f"  ⏰ [발행 모드] 골든타임 예약: {scheduled_str} KST")
+        else:
+            privacy_status = "public"
+            publish_at_utc = None
+            scheduled_str = None
+            print("  📢 [발행 모드] 19시 경과 -> 즉시 전체 공개 (public)")
+
+    res_url = upload_video(
+        video_path=video_file,
+        title=yt_title,
+        description=yt_desc,
+        tags=yt_tags,
+        privacy_status=privacy_status,
+        publish_at=publish_at_utc
+    )
+
+    if res_url:
+        print(f"\n🎉 [성공] 유튜브 업로드 완료: {res_url}")
+        if scheduled_str:
+            print(f"   공개 예정 시간: {scheduled_str} KST")
+    else:
+        print("\n❌ [실패] 유튜브 업로드 실패")
+        sys.exit(1)

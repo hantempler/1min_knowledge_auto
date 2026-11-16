@@ -48,9 +48,9 @@ def clean_json_str(text: str) -> str:
     return text.strip()
 
 def validate_script_constraints(script_data: dict) -> bool:
-    """씬당 글자 수(20~35자 - 쇼츠 2줄 절대 엄수), 5~6씬 전체 길이(120~210자) 및 종결어미 완결성 하드 검증"""
-    if "sections" not in script_data or len(script_data["sections"]) not in (5, 6):
-        print(f"  ⚠️ [대본 씬 개수 미달] 씬 개수 {len(script_data.get('sections', []))}개 (허용: 5~6개)", flush=True)
+    """씬당 글자 수(18~35자 - 쇼츠 2줄 절대 엄수), 8~10씬 전체 길이(180~360자) 및 종결어미 완결성 하드 검증"""
+    if "sections" not in script_data or not (8 <= len(script_data["sections"]) <= 10):
+        print(f"  ⚠️ [대본 씬 개수 부적합] 씬 개수 {len(script_data.get('sections', []))}개 (허용: 8~10개)", flush=True)
         return False
     total_len = 0
     for idx, sec in enumerate(script_data["sections"]):
@@ -60,8 +60,8 @@ def validate_script_constraints(script_data: dict) -> bool:
             print(f"  ⚠️ [대본 2줄 규격 미달] 씬 {idx+1} 글자수 {n_len}자 (허용: 18~35자, 2줄 초과 차단): '{narr}'", flush=True)
             return False
         total_len += n_len
-    if total_len < 110 or total_len > 210:
-        print(f"  ⚠️ [대본 총량 미달] 전체 {total_len}자 (허용: 110~210자)", flush=True)
+    if total_len < 180 or total_len > 360:
+        print(f"  ⚠️ [대본 총량 미달] 전체 {total_len}자 (허용: 180~360자)", flush=True)
         return False
 
     # 마지막 씬 종결 어미 엄격 검증: '~하므로', '~때문에' 등 미완결 접속형 어미 차단
@@ -155,11 +155,11 @@ def generate_youtube_metadata(arg1: dict, arg2: dict, bgm_name: str = None) -> d
         if not fact_check_sum:
             fact_check_sum = f"{article_title} 보도에 따르면, 과학적·통계적 인과관계 분석 결과 검증된 핵심 원리를 확인했습니다."
 
-    # 2. 실전 핵심 가이드 & 행동 수칙 (없으면 씬 6 기반 Fallback)
+    # 2. 실전 핵심 가이드 & 행동 수칙 (없으면 마지막 씬 기반 Fallback)
     practical_guide = script_data.get("practical_guide", "").strip()
     if not practical_guide:
-        if len(sections) > 5:
-            practical_guide = re.sub(r'<.*?>', '', sections[5].get("subtitle", "")).strip()
+        if len(sections) > 0:
+            practical_guide = re.sub(r'<.*?>', '', sections[-1].get("subtitle", "")).strip()
         if not practical_guide:
             practical_guide = "관련 피해를 예방하고 내 권리를 지키기 위해 공인된 실천 지침을 일상에서 즉시 준수하시기 바랍니다."
 
@@ -305,8 +305,9 @@ def generate_script(topic_info: dict, force_refresh: bool = False, output_dir: s
 
     prompt = f"""
 당신은 대한민국 1위 숏폼 지식 채널(1분미만 스타일)의 메인 총괄 시나리오 작가입니다.
-아래 제공된 [실제 보도된 네이버 랭킹 뉴스 기사]를 바탕으로, 
-시청자가 0초 만에 스크롤을 멈추고 끝까지 숨죽여 몰입하는 [초몰입형 6씬 쇼츠 대본]을 JSON으로 작성하세요.
+제공된 [실제 보도된 랭킹 뉴스 기사]의 내용을 정밀하게 독해하고, 
+왜곡이나 추상화 없이 기사의 핵심 팩트, 공식 수치, 원인과 메커니즘, 실전 행동 요령까지 완벽히 전달하는
+[45~55초 분량(총 8~10씬) 완성형 지식 쇼츠 대본]을 JSON으로 작성하세요.
 
 [기사 원문 정보]
 - 날짜: {target_date_str}
@@ -317,42 +318,43 @@ def generate_script(topic_info: dict, force_refresh: bool = False, output_dir: s
 - 기사 본문 전문:
 {article_body[:2500]}
 
-[★ 1분미만 스타일 핵심 집필 원칙 (식상함·교과서 톤 100% 타파) ★]
+[★ 1분미만 스타일 범용 스토리텔링 설계 원칙 (전 도메인 공통) ★]
 
-1. ❌ 뉴스 리포트체/다큐멘터리체 절대 금지 vs ⭕ 찰진 1:1 대화 구어체 필수:
-   - ❌ 절대 금지: '~밝혀졌습니다', '~유발합니다', '~지목했습니다', '~올라갑니다', '~적신호입니다' 등 딱딱한 아나운서 종결어미 6연타 금지!
-   - ⭕ 필수 적용: 친구나 동생에게 진짜 꿀팁을 귀띔해 주듯 생생하고 리듬감 넘치는 구어체 종결어미 사용!
-     * 씬별 어미 예시: '~하셨죠?', '~거든요', '~인데요', '~라는 겁니다', '~하는 셈입니다', '~해보세요!'
-     * 6개 씬의 어미를 다채롭게 변주하여 지루하지 않은 말맛과 운율을 살리십시오.
+1. ⏱️ 45~55초 완결형 볼륨 (반드시 8~10개 씬 구성):
+   - 내용이 짧아 피상적으로 끝나지 않도록, 일상 착각 직격 -> 핵심 가치/위험 -> 대상 구체적 명칭 공개 -> 1차 원리 -> 2차 연쇄 메커니즘 -> 공인 연구/권위자 팩트 -> 치명적 실수/경고 -> 공인 기관 권장 기준 -> 구체적 실천법 -> 필수 보관/주의 팁까지 기승전결 10단계를 빈틈없이 전개하십시오.
+   - sections 배열의 원소는 반드시 8개, 9개, 또는 10개여야 합니다.
 
-2. 🎣 0초 일상 공감 훅 (Daily Habit Callout):
-   - 기사 제목이나 거창한 설명으로 시작하지 마십시오.
-   - 시청자가 오늘 집, 마트, 주방, 운전대, 스마트폰에서 "무심코 했던 바로 그 행동"을 0초에 직격하십시오.
-     * 예: "집에서 마늘 싹 나면 감자처럼 독 생겼다고 다 버리셨죠?"
-     * 예: "추운 날 차 탈 때 패딩 입은 채로 안전벨트 매셨죠?"
-     * 예: "고깃집 불판 바꿀 때 무심코 이렇게 하셨다면 진짜 큰일 납니다."
+2. 🎯 기사 원문 팩트의 정확한 독해 및 고유명사 명시 (추상화/왜곡 절대 금지):
+   - 씬 2에서 호기심을 유발했으면, 씬 3에서 그 대상(물질명, 식품명, 제도명 등)의 구체적인 명칭을 반드시 시원하게 공개하십시오.
+   - 기사의 핵심이 정부 정책/제도라면 '그 제도가 무엇인지'와 '시행 시점(예: 내년 5월 등)'을 대본 전반부에서 반드시 명확히 설명해야 합니다. (맥락 없는 난데없는 미래 시점이나 숫자 언급 절대 금지)
+   - 시청자가 실행해야 할 공식 앱 이름, 사이트, 기관명, 물질명, 법률명 등 고유명사(예: '아마씨', '메이요클리닉', '어카운트인포' 등)는 두루뭉술하게 얼버무리지 말고 정확히 자막과 음성에 담으십시오.
+   - 통계와 숫자는 주어와 단위를 분명히 밝혀 신뢰도와 충격도를 전달하십시오.
 
-3. 💡 직관적인 체감형 비유 (Sensory Analogy):
-   - 기사의 어려운 학술 용어(대사물질, 항산화 활성, LDL 수치, 과충전)를 그대로 읊지 마십시오.
-   - 누구나 1초 만에 머릿속에 그림이 번쩍 떠오르는 '일상의 생생한 비유'로 치환하십시오.
-     * 예: "혈관 속에 시커먼 기름때가 하수구처럼 꽉 끼는 건데요."
-     * 예: "싹을 틔우려고 마늘이 온몸의 영양소를 꽉꽉 쥐어짜 내기 때문입니다."
-     * 예: "스마트폰에 수도꼭지 틀어놓고 밤새 물 붓는 거랑 똑같습니다."
+3. 💬 찰진 1:1 대화 구어체 & 리듬감 변주 (뉴스 리포트체 100% 금지):
+   - ❌ 절대 금지: '~밝혀졌습니다', '~유발합니다', '~지목했습니다', '~올라갑니다', '~적신호입니다' 등 딱딱한 아나운서 종결어미 3회 이상 연속 사용 금지!
+   - ⭕ 필수 적용: 친구에게 놀라운 꿀팁을 귀띔하듯 생생한 대화형 종결어미 변주!
+     * 씬별 변주 예시: '~하셨죠?', '~거든요', '~인데요', '~라는 겁니다', '~하는 셈입니다', '~조심하셔야 합니다', '~해보세요!'
 
-4. 🔗 물 흐르듯 이어지는 6단계 스토리 라인 (동문서답 0건 보장):
-   - 씬 1 (01. 일상 공감 훅): 시청자가 당연하게 하던 일상 행동의 허점을 0초에 지목 (공백 포함 22~34자, '~하셨죠?')
-   - 씬 2 (02. 충격적 반전): 그 행동이 왜 손해/위험인지 호기심 증폭 (공백 포함 22~34자, '근데 이거 알고 보면 ~거든요')
-   - 씬 3 (03. 명쾌한 핵심 해답): 질문과 1:1로 정확히 일치하는 진짜 핵심 정답 제시 (공백 포함 22~34자, '바로 ~라는 건데요')
-   - 씬 4 (04. 직관적 비유 원리): 왜 그런지 머릿속에 상상되는 생생한 비유로 설명 (공백 포함 22~34자, '~하는 거랑 똑같은 원리입니다')
-   - 씬 5 (05. 기사 수치 팩트): 기사 본문의 공식 연구, 통계, 숫자로 신뢰도 쐐기 박기 (공백 포함 22~34자, '실제로 딱 O일째 ~가 O배나 폭발했습니다')
-   - 씬 6 (06. 구체적 실천 꿀팁): 오늘 당장 써먹을 수 있는 명쾌한 대처법 (공백 포함 22~34자, '앞으론 ~하지 마시고, 꼭 ~해보세요!')
+4. 🔗 8~10단계 유기적 기승전결 스토리 라인:
+   - 씬 1 (일상 공감 훅): 시청자가 일상에서 무심코 하던 행동이나 믿고 있던 상식 0초 직격 (22~34자, '~하셨죠?')
+   - 씬 2 (호기심 유발/가치): 그 대상의 숨겨진 진짜 가치나 뜻밖의 손해/위험 제시 (22~34자, '~거든요')
+   - 씬 3 (구체적 대상 공개): 씬 2에서 언급한 주인공(식품명/물질명/제도명)의 정체를 명확히 공개 (22~34자, '그 정체가 바로 ~인데요')
+   - 씬 4 (작용 원리 1): 그 주인공이 1차로 작용하는 핵심 성분 및 원리 설명 (22~34자)
+   - 씬 5 (작용 원리 2 및 메커니즘): 1차 작용으로 신체/상황에서 일어나는 결정적 변화/효과 (22~34자)
+   - 씬 6 (권위자/공식 연구 팩트): 기사 속 공인된 연구, 전문의, 공식 발표 내용 (22~34자)
+   - 씬 7 (치명적 섭취/행동 실수 경고): 잘못된 방식으로 하거나 가만히 두었을 때 아무 효과가 없거나 손해 보는 이유 (22~34자)
+   - 씬 8 (공식 기관 권장 기준): 기사 속 공인 기관(메이요클리닉, 정부 기관 등)이 권장하는 올바른 실천 기준 (22~34자)
+   - 씬 9 (구체적 실천 행동 지침): 1~2큰술, 1원 단위 등 일상에서 바로 실천하는 구체적 실행법 (22~34자)
+   - 씬 10 (필수 보관/주의 팁): 산패 방지, 밀폐 냉장, 신청 주의사항 등 마지막 안전 수칙 전달 (22~34자, '~해보세요!')
 
-5. 📐 자막 2줄 안전 규격 (22~35자) 및 코어 키워드 규칙:
-   - 각 씬은 반드시 생생한 '단 1문장'(공백 포함 22~34자, 최대 35자 절대 엄수).
-   - core_keyword (2~6자): 화면 중앙에 팝업될 가장 충격적이고 직관적인 단어 (일반 명사 배제).
-   - subtitle: core_keyword에만 <hl>core_keyword</hl> 태그 감싸기 (씬당 단 1개).
-   - narration: subtitle과 100% 동일한 글자, 숫자는 순수 한글 발음으로 풀어서 작성.
+5. 📐 자막 2줄 안전 규격 (22~35자) 및 시각 자막 vs 성우 낭독 1:1 분리:
+   - 각 씬은 반드시 생생한 '단 1문장'(공백 포함 22~34자, 최대 35자 절대 엄수 - 48pt 자막 2줄 고정).
+   - core_keyword (2~6자): 화면 중앙에 팝업될 가장 직관적이고 충격적인 단어 (일반 명사 배제).
+   - subtitle (시각 자막): 화면 노출용 48pt 자막 (22~34자). 숫자는 반드시 [아라비아 숫자 + 단위 기호](예: 1~2큰술, 5년, 5018억원, 2조원)로 표기하고, 핵심 키워드에만 <hl>core_keyword</hl> 태그 감싸기 (씬당 단 1개). mg/dL 등 복잡한 학술 단위는 가독성을 위해 간결하게 정돈하십시오.
+   - narration (성우 낭독 음성): TTS 성우 낭독용 문장 (22~34자). 기계음 오독을 방지하기 위해 위 subtitle의 숫자를 문맥에 맞는 [순수 한글 발음](예: 한두 큰술, 오 년, 오천십팔억 원, 이 조 원)으로 단위를 절대로 생략하지 말고 온전히 풀어서 작성. 어순과 다른 단어는 subtitle과 100% 동일하게 유지.
    - anchor_word: 해당 씬 narration의 첫 단어 (2음절 이상 독립 단어).
+   - search_query: 해당 씬의 팩트 사료를 구글/빙에서 검색할 구체적 실사 쿼리 (예: "키빼몸 트위터 체중계 보도사진", "섭식장애 통계 그래프", "병원 진료비 영수증"). 감성적/추상적 단어 배제.
+   - allow_video: 메시지 전달에 '피사체의 연속된 동작이나 현장 움직임'이 필수적인 씬인 경우 true (전체 대본 중 최대 2~3개 씬 이내로 엄격히 제한), 사료·보도자료·인물·장비·문서 등 '정지된 실사 사진'으로 명확한 정보와 신뢰감을 전달해야 하는 씬은 false.
    - image_prompt: 9:16 vertical photorealistic cinematic documentary 영문 프롬프트 (CRITICAL: Absolutely NO text, NO words, NO letters).
 
 반드시 순수 JSON 형식으로만 응답하세요:
@@ -373,46 +375,8 @@ def generate_script(topic_info: dict, force_refresh: bool = False, output_dir: s
       "anchor_word": "첫단어",
       "narration": "0초 일상 공감 한글 낭독 단 1문장 (22~34자, ~하셨죠?)",
       "subtitle": "core_keyword에만 <hl>...</hl>를 감싼 1문장 (22~34자)",
-      "image_prompt": "Photorealistic 8k vertical 9:16 cinematic shot... CRITICAL: Absolutely NO text, NO words."
-    }},
-    {{
-      "step_title": "02. 충격적 반전",
-      "core_keyword": "핵심단어",
-      "anchor_word": "첫단어",
-      "narration": "호기심 증폭 반전 한글 낭독 단 1문장 (22~34자, ~거든요/~인데요)",
-      "subtitle": "core_keyword에만 <hl>...</hl>를 감싼 1문장 (22~34자)",
-      "image_prompt": "Photorealistic 8k vertical 9:16 cinematic shot... CRITICAL: Absolutely NO text, NO words."
-    }},
-    {{
-      "step_title": "03. 명쾌한 핵심 해답",
-      "core_keyword": "핵심단어",
-      "anchor_word": "첫단어",
-      "narration": "핵심 해답 한글 낭독 단 1문장 (22~34자, 질문과 동일 범주)",
-      "subtitle": "core_keyword에만 <hl>...</hl>를 감싼 1문장 (22~34자)",
-      "image_prompt": "Photorealistic 8k vertical 9:16 cinematic shot... CRITICAL: Absolutely NO text, NO words."
-    }},
-    {{
-      "step_title": "04. 직관적 비유 원리",
-      "core_keyword": "핵심단어",
-      "anchor_word": "첫단어",
-      "narration": "머릿속에 그려지는 비유 한글 낭독 단 1문장 (22~34자, ~하는 셈입니다/~똑같습니다)",
-      "subtitle": "core_keyword에만 <hl>...</hl>를 감싼 1문장 (22~34자)",
-      "image_prompt": "Photorealistic 8k vertical 9:16 cinematic shot... CRITICAL: Absolutely NO text, NO words."
-    }},
-    {{
-      "step_title": "05. 기사 팩트 수치 입증",
-      "core_keyword": "핵심단어",
-      "anchor_word": "첫단어",
-      "narration": "생생한 수치 입증 한글 낭독 단 1문장 (22~34자, 숫자 한글 발음)",
-      "subtitle": "core_keyword에만 <hl>...</hl>를 감싼 1문장 (22~34자)",
-      "image_prompt": "Photorealistic 8k vertical 9:16 cinematic shot... CRITICAL: Absolutely NO text, NO words."
-    }},
-    {{
-      "step_title": "06. 구체적 실천 꿀팁",
-      "core_keyword": "핵심단어",
-      "anchor_word": "첫단어",
-      "narration": "오늘 당장 써먹는 꿀팁 한글 낭독 단 1문장 (22~34자, ~해보세요/~보세요)",
-      "subtitle": "core_keyword에만 <hl>...</hl>를 감싼 1문장 (22~34자)",
+      "search_query": "실제 보도사진/영상 사료 검색용 구체적 팩트 쿼리",
+      "allow_video": true,
       "image_prompt": "Photorealistic 8k vertical 9:16 cinematic shot... CRITICAL: Absolutely NO text, NO words."
     }}
   ]
@@ -472,11 +436,32 @@ def generate_script(topic_info: dict, force_refresh: bool = False, output_dir: s
         clean_step = re.sub(r'^\d+[\.\s\-]+', '', raw_step).strip()
         sec["header_main"] = f"{i+1:02d}. {clean_step}"
 
-        print(f"    씬 {i+1}: [{sec['header_sub']}] {sec['header_main']} | 자막: {sub}")
+        # 실사 발굴용 search_query 및 allow_video 보정
+        if not sec.get("search_query"):
+            clean_sub = re.sub(r'<.*?>', '', sub).strip()
+            sec["search_query"] = f"{press} {sec.get('core_keyword', '')} {clean_sub[:20]} 보도사진"
+        if "allow_video" not in sec:
+            sec["allow_video"] = False
+
+        print(f"    씬 {i+1}: [{sec['header_sub']}] {sec['header_main']} | 자막: {sub} | 쿼리: {sec['search_query']}")
 
     # 팩트체크 검증 및 유튜브 설명란/메타데이터 자동 생성
     script_data["fact_check"] = verify_script_facts(article_body, script_data)
-    script_data["youtube_metadata"] = generate_youtube_metadata(topic_info, script_data)
+
+    # BGM 음원 동적 결정
+    try:
+        from renderer import resolve_bgm_track
+    except ImportError:
+        try:
+            from src.renderer import resolve_bgm_track
+        except ImportError:
+            resolve_bgm_track = None
+
+    chosen_bgm = None
+    if resolve_bgm_track:
+        chosen_bgm = resolve_bgm_track(category=topic_info.get("category"), date_str=target_date_str)
+
+    script_data["youtube_metadata"] = generate_youtube_metadata(topic_info, script_data, bgm_name=chosen_bgm)
 
     # 파일 저장 (data/ 및 지정된 output_dir)
     with open(out_file, "w", encoding="utf-8") as f:
@@ -491,16 +476,25 @@ def generate_script(topic_info: dict, force_refresh: bool = False, output_dir: s
     return script_data
 
 if __name__ == "__main__":
+    import argparse
+    from datetime import datetime
     if sys.stdout and hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
-    test_date = "2026-11-13"
-    clean_d = test_date.replace("-", "")
+    parser = argparse.ArgumentParser(description="Step 3: 쇼츠 대본 집필기")
+    parser.add_argument("--date", type=str, default=datetime.now().strftime("%Y-%m-%d"), help="대상 일자 (YYYY-MM-DD)")
+    parser.add_argument("--force", action="store_true", help="기존 캐시 무시하고 강제 재생성")
+    args = parser.parse_args()
+
+    clean_d = args.date.replace("-", "")
     topic_file = os.path.join(config.DATA_DIR, f"topic_selection_{clean_d}.json")
     if os.path.exists(topic_file):
         with open(topic_file, "r", encoding="utf-8") as f:
             t_info = json.load(f)
-        s_data = generate_script(t_info, force_refresh=True)
-        print("\n[대본 생성 결과]")
-        print(json.dumps(s_data, ensure_ascii=False, indent=2))
+        out_dir = os.path.join(config.DATA_DIR, args.date)
+        s_data = generate_script(t_info, force_refresh=args.force, output_dir=out_dir)
+        print("\n[Step 3 대본 생성 결과]")
+        for idx, sec in enumerate(s_data.get("sections", []), 1):
+            badge = "🎬 [비디오]" if sec.get("allow_video") else "🖼️ [실사사진]"
+            print(f"  씬 {idx:02d}: {badge} {sec.get('step_title')} | 자막: {sec.get('subtitle')}")
     else:
         print(f"토픽 파일 부재: {topic_file}")

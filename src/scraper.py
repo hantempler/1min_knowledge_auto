@@ -83,10 +83,17 @@ def fetch_article_body(url: str, timeout: int = 5) -> str:
     return ""
 
 if __name__ == "__main__":
+    import argparse
+    from datetime import datetime
     if sys.stdout and hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
-    test_date = "2026-11-12"
-    articles = get_naver_ranking_by_date(test_date)
-    print(f"\n[테스트 결과] {test_date} 기사 수: {len(articles)}건")
+    parser = argparse.ArgumentParser(description="Step 1: 네이버 랭킹 뉴스 수집기")
+    parser.add_argument("--date", type=str, default=datetime.now().strftime("%Y-%m-%d"), help="수집 대상 일자 (YYYY-MM-DD)")
+    parser.add_argument("--force", action="store_true", help="기존 캐시 무시하고 강제 재수집")
+    args = parser.parse_args()
+
+    target_date = args.date
+    articles = get_naver_ranking_by_date(target_date, force_refresh=args.force)
+    print(f"\n[Step 1 수집 완료] {target_date} 총 랭킹 기사 수: {len(articles)}건")
     for i, a in enumerate(articles[:5], 1):
         print(f"  {i}. [{a['press']}] {a['title']}")
