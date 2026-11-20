@@ -301,51 +301,48 @@ def generate_script(topic_info: dict, force_refresh: bool = False, output_dir: s
     shorts_title = topic_info.get("shorts_title", "")
     category = topic_info.get("category", "")
     knowledge_core = topic_info.get("knowledge_core", "")
+    why_viral = topic_info.get("why_viral", "")
     article_body = topic_info.get("article_body", "")
 
     prompt = f"""
 당신은 대한민국 1위 숏폼 지식 채널(1분미만 스타일)의 메인 총괄 시나리오 작가입니다.
-제공된 [실제 보도된 랭킹 뉴스 기사]의 내용을 정밀하게 독해하고, 
-왜곡이나 추상화 없이 기사의 핵심 팩트, 공식 수치, 원인과 메커니즘, 실전 행동 요령까지 완벽히 전달하는
+제공된 [기사 핵심 팩트]와 [기사 본문]을 바탕으로, 
+0초 훅 제목({shorts_title})의 단일 주제에 100% 집중하여 하나의 완결된 인과관계와 서사를 전달하는
 [45~55초 분량(총 8~10씬) 완성형 지식 쇼츠 대본]을 JSON으로 작성하세요.
 
-[기사 원문 정보]
+[기사 원문 및 핵심 팩트 경계]
 - 날짜: {target_date_str}
 - 언론사: {press}
 - 기사 원문 제목: {article_title}
-- 0초 훅 제목: {shorts_title}
+- 0초 훅 제목 (핵심 주제): {shorts_title}
 - 카테고리: {category}
-- 기사 본문 전문:
-{article_body[:2500]}
+- 바이럴 이유: {why_viral}
+- 핵심 지식 (반드시 다루어야 할 팩트 바운더리): {knowledge_core}
+- 기사 본문 (참고용):
+{article_body[:2000]}
 
-[★ 1분미만 스타일 범용 스토리텔링 설계 원칙 (전 도메인 공통) ★]
+[🚨 단일 주제 집중 및 부속 기사 완전 배제 원칙 (위반 시 실격) 🚨]
+1. 반드시 0초 훅 제목({shorts_title})이 다루는 '단 하나의 핵심 주제/사건'에만 씬 1부터 마지막 씬까지 100% 집중하십시오.
+2. [곁가지 배제]: 기사 본문이나 핵심 팩트에 메인 0초 훅 주제와 직접적인 인과관계가 없는 타 부서 발표, 별개의 단속 통계, 부속 브리핑이 덧붙여져 있더라도, 메인 주제와 무관한 내용은 단 1문장도 대본에 넣지 말고 100% 전면 배제하십시오.
+3. 씬 1에서 제기한 질문과 충격이 마지막 씬까지 오직 메인 주제의 단일한 인과관계(발단 ➔ 실체 ➔ 경위 ➔ 파장 ➔ 시사점/대처법)로만 매끄럽게 완결되어야 합니다.
 
-1. ⏱️ 45~55초 완결형 볼륨 (반드시 8~10개 씬 구성):
-   - 내용이 짧아 피상적으로 끝나지 않도록, 일상 착각 직격 -> 핵심 가치/위험 -> 대상 구체적 명칭 공개 -> 1차 원리 -> 2차 연쇄 메커니즘 -> 공인 연구/권위자 팩트 -> 치명적 실수/경고 -> 공인 기관 권장 기준 -> 구체적 실천법 -> 필수 보관/주의 팁까지 기승전결 10단계를 빈틈없이 전개하십시오.
+[★ 1분미만 스타일 유기적 서사 전개 원칙 ★]
+
+1. 🔗 유기적 서사 전개 (총 8~10개 씬 구성):
+   - [도입 (씬 1~2)]: 시청자가 0초 만에 멈추게 만드는 일상 상식 직격 및 충격적인 실제 문제 상황 제시 (각 22~34자)
+   - [전개 (씬 3~5)]: 겉으로 드러난 상황 뒤에 숨겨진 진짜 원인/실체 규명 및 구체적인 작동 과정/경위 설명 (각 22~34자)
+   - [심화 (씬 6~7)]: 기사 본문에 입각한 구체적 피해/영향, 팩트 수치, 또는 사회적/구조적 파장 제시 (각 22~34자)
+   - [결말 (씬 8~10)]: 이 사건/지식이 시청자에게 주는 치명적 경각심 환기 및 일상에서 피해를 막기 위한 명확한 실천 대처법과 1초 마침표 (각 22~34자)
    - sections 배열의 원소는 반드시 8개, 9개, 또는 10개여야 합니다.
 
-2. 🎯 기사 원문 팩트의 정확한 독해 및 고유명사 명시 (추상화/왜곡 절대 금지):
-   - 씬 2에서 호기심을 유발했으면, 씬 3에서 그 대상(물질명, 식품명, 제도명 등)의 구체적인 명칭을 반드시 시원하게 공개하십시오.
-   - 기사의 핵심이 정부 정책/제도라면 '그 제도가 무엇인지'와 '시행 시점(예: 내년 5월 등)'을 대본 전반부에서 반드시 명확히 설명해야 합니다. (맥락 없는 난데없는 미래 시점이나 숫자 언급 절대 금지)
-   - 시청자가 실행해야 할 공식 앱 이름, 사이트, 기관명, 물질명, 법률명 등 고유명사(예: '아마씨', '메이요클리닉', '어카운트인포' 등)는 두루뭉술하게 얼버무리지 말고 정확히 자막과 음성에 담으십시오.
+2. 🎯 고유명사와 팩트 명시 (추상화/왜곡 절대 금지):
+   - 씬 2에서 호기심을 유발했으면, 씬 3에서 그 대상(사건명/기능명/제도명 등)의 구체적인 명칭을 반드시 시원하게 공개하십시오.
+   - 시청자가 실행해야 할 공식 앱 이름, 사이트, 기관명, 물질명, 법률명 등 고유명사는 얼버무리지 말고 정확히 자막과 음성에 담으십시오.
    - 통계와 숫자는 주어와 단위를 분명히 밝혀 신뢰도와 충격도를 전달하십시오.
 
-3. 💬 찰진 1:1 대화 구어체 & 리듬감 변주 (뉴스 리포트체 100% 금지):
-   - ❌ 절대 금지: '~밝혀졌습니다', '~유발합니다', '~지목했습니다', '~올라갑니다', '~적신호입니다' 등 딱딱한 아나운서 종결어미 3회 이상 연속 사용 금지!
-   - ⭕ 필수 적용: 친구에게 놀라운 꿀팁을 귀띔하듯 생생한 대화형 종결어미 변주!
-     * 씬별 변주 예시: '~하셨죠?', '~거든요', '~인데요', '~라는 겁니다', '~하는 셈입니다', '~조심하셔야 합니다', '~해보세요!'
-
-4. 🔗 8~10단계 유기적 기승전결 스토리 라인:
-   - 씬 1 (일상 공감 훅): 시청자가 일상에서 무심코 하던 행동이나 믿고 있던 상식 0초 직격 (22~34자, '~하셨죠?')
-   - 씬 2 (호기심 유발/가치): 그 대상의 숨겨진 진짜 가치나 뜻밖의 손해/위험 제시 (22~34자, '~거든요')
-   - 씬 3 (구체적 대상 공개): 씬 2에서 언급한 주인공(식품명/물질명/제도명)의 정체를 명확히 공개 (22~34자, '그 정체가 바로 ~인데요')
-   - 씬 4 (작용 원리 1): 그 주인공이 1차로 작용하는 핵심 성분 및 원리 설명 (22~34자)
-   - 씬 5 (작용 원리 2 및 메커니즘): 1차 작용으로 신체/상황에서 일어나는 결정적 변화/효과 (22~34자)
-   - 씬 6 (권위자/공식 연구 팩트): 기사 속 공인된 연구, 전문의, 공식 발표 내용 (22~34자)
-   - 씬 7 (치명적 섭취/행동 실수 경고): 잘못된 방식으로 하거나 가만히 두었을 때 아무 효과가 없거나 손해 보는 이유 (22~34자)
-   - 씬 8 (공식 기관 권장 기준): 기사 속 공인 기관(메이요클리닉, 정부 기관 등)이 권장하는 올바른 실천 기준 (22~34자)
-   - 씬 9 (구체적 실천 행동 지침): 1~2큰술, 1원 단위 등 일상에서 바로 실천하는 구체적 실행법 (22~34자)
-   - 씬 10 (필수 보관/주의 팁): 산패 방지, 밀폐 냉장, 신청 주의사항 등 마지막 안전 수칙 전달 (22~34자, '~해보세요!')
+3. 💬 1분미만 정통 속도감 있는 구어체 원칙 (유치한 어미 금지):
+   - 특정 어미('~거든요', '~인데요', '~했답니다', '~하셨죠?' 등)의 기계적 남발 및 억지 질문형 톤을 전면 금지합니다.
+   - 성인 시청자 타깃의 긴장감 있고 빠른 전달체('~라는 겁니다', '~한 셈이죠', '~벌어진 일입니다', '~주의하셔야 합니다' 등)로 문맥에 맞게 다채롭게 전개하십시오.
 
 5. 📐 자막 2줄 안전 규격 (22~35자) 및 시각 자막 vs 성우 낭독 1:1 분리:
    - 각 씬은 반드시 생생한 '단 1문장'(공백 포함 22~34자, 최대 35자 절대 엄수 - 48pt 자막 2줄 고정).
@@ -354,7 +351,9 @@ def generate_script(topic_info: dict, force_refresh: bool = False, output_dir: s
    - narration (성우 낭독 음성): TTS 성우 낭독용 문장 (22~34자). 기계음 오독을 방지하기 위해 위 subtitle의 숫자를 문맥에 맞는 [순수 한글 발음](예: 한두 큰술, 오 년, 오천십팔억 원, 이 조 원)으로 단위를 절대로 생략하지 말고 온전히 풀어서 작성. 어순과 다른 단어는 subtitle과 100% 동일하게 유지.
    - anchor_word: 해당 씬 narration의 첫 단어 (2음절 이상 독립 단어).
    - search_query: 해당 씬의 팩트 사료를 구글/빙에서 검색할 구체적 실사 쿼리 (예: "키빼몸 트위터 체중계 보도사진", "섭식장애 통계 그래프", "병원 진료비 영수증"). 감성적/추상적 단어 배제.
+   - stock_query_en: Pexels 등 글로벌 실사 스톡 사진 및 비디오 검색용 2~4단어 순수 영문 핵심 키워드 (예: "airport customs luggage", "prescription medicine pills", "overseas credit card payment", "police officer investigation"). 한국어 및 감성적 단어 절대 배제하고 구체적 시각 대상 영단어로만 작성.
    - allow_video: 메시지 전달에 '피사체의 연속된 동작이나 현장 움직임'이 필수적인 씬인 경우 true (전체 대본 중 최대 2~3개 씬 이내로 엄격히 제한), 사료·보도자료·인물·장비·문서 등 '정지된 실사 사진'으로 명확한 정보와 신뢰감을 전달해야 하는 씬은 false.
+   - require_news_photo: 기사에서 다루는 특정 제품/약품 실물 패키지, 공문서, 특정 인물 등 '실제 언론 보도사진'이 반드시 필요한 팩트 씬이면 true, 일상 고민/연출 등 스톡 사진으로 충분한 씬이면 false.
    - image_prompt: 9:16 vertical photorealistic cinematic documentary 영문 프롬프트 (CRITICAL: Absolutely NO text, NO words, NO letters).
 
 반드시 순수 JSON 형식으로만 응답하세요:
@@ -376,6 +375,7 @@ def generate_script(topic_info: dict, force_refresh: bool = False, output_dir: s
       "narration": "0초 일상 공감 한글 낭독 단 1문장 (22~34자, ~하셨죠?)",
       "subtitle": "core_keyword에만 <hl>...</hl>를 감싼 1문장 (22~34자)",
       "search_query": "실제 보도사진/영상 사료 검색용 구체적 팩트 쿼리",
+      "stock_query_en": "airport customs luggage inspection",
       "allow_video": true,
       "image_prompt": "Photorealistic 8k vertical 9:16 cinematic shot... CRITICAL: Absolutely NO text, NO words."
     }}
@@ -389,7 +389,7 @@ def generate_script(topic_info: dict, force_refresh: bool = False, output_dir: s
             resp = client.models.generate_content(
                 model=config.MODEL_FAST,
                 contents=prompt,
-                config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.35)
+                config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.2)
             )
             raw_text = clean_json_str(safe_get_text(resp))
             parsed = json.loads(raw_text)
@@ -440,10 +440,15 @@ def generate_script(topic_info: dict, force_refresh: bool = False, output_dir: s
         if not sec.get("search_query"):
             clean_sub = re.sub(r'<.*?>', '', sub).strip()
             sec["search_query"] = f"{press} {sec.get('core_keyword', '')} {clean_sub[:20]} 보도사진"
+        if not sec.get("stock_query_en"):
+            sec["stock_query_en"] = "news documentary"
         if "allow_video" not in sec:
             sec["allow_video"] = False
+        if "require_news_photo" not in sec:
+            sec["require_news_photo"] = False
 
-        print(f"    씬 {i+1}: [{sec['header_sub']}] {sec['header_main']} | 자막: {sub} | 쿼리: {sec['search_query']}")
+        v_badge = "[비디오]" if sec.get("allow_video") else ("[뉴스사진]" if sec.get("require_news_photo") else "[스톡사진]")
+        print(f"    씬 {i+1}: {v_badge} [{sec['header_sub']}] {sec['header_main']} | 자막: {sub} | 쿼리: {sec['search_query']}")
 
     # 팩트체크 검증 및 유튜브 설명란/메타데이터 자동 생성
     script_data["fact_check"] = verify_script_facts(article_body, script_data)

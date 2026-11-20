@@ -1,20 +1,23 @@
 # -*- coding: utf-8 -*-
 """
-[Step 5-A] 3-Tier 폭포수 비주얼 에셋 소싱 & Gemini Vision 검증 엔진 (asset_sourcer.py)
-기준 레퍼런스: onthenext_shorts 02_star_image.py
+[Step 5-A] 4-Tier 폭포수 비주얼 에셋 소싱 & Gemini Vision 검증 엔진 (asset_sourcer.py)
+기준 레퍼런스: onthenext_shorts 02_star_image.py 및 2026-11-17 프로덕션 실증 사양
 
-[3단계 무결점 캐스케이드 & Vision Gate 가드레일]:
-1. [Tier 1: 숏폼 비디오 클립]:
-   - 오프닝 훅 씬(씬 1, 2) 유튜브 5초 무음 1080x1920 세로 클립 추출 (yt-dlp)
-   - 1.5초 지점 프레임 캡처 후 Gemini Vision 1차 검증 (뉴스/주제 팩트 부합 심사)
-2. [Tier 2: AI 실사 보도사진 소싱 (Google Search Grounding)]:
-   - Gemini 모델에 Google Search Grounding(types.GoogleSearch())을 연동한 실시간 AI 공식 보도자료/기사 검색
-   - 공식 출처 고화질 사진 수집 후 Gemini Vision 하드 게이트 적용
+[4단계 무결점 캐스케이드 & Vision Gate 가드레일]:
+1. [Tier 1: Pexels 세로 비디오 클립]:
+   - 대본에서 allow_video=True 인 씬 대상 Pexels Video API 세로(1080x1920) 비디오 직수령
+   - 1.5초 지점 프레임 캡처 후 Gemini Vision 1차 검증 -> 통과 시 5초 무음 mp4 인코딩
+2. [Tier 2: AI 실사 보도사진 카드 (Google Search Grounding)]:
+   - require_news_photo=True 인 팩트 사료 씬에 한하여 실시간 AI 공식 보도자료/기사 검색
+   - 3.0초 하드 타임아웃 방어 적용 (외부 언론사 서버 지연 시 즉시 Tier 3 전환)
    - 통과 시 9:16 가우시안 블러(반경 35, 밝기 38%) + 중앙 960px 라운딩(r=28) 플로팅 카드 합성
-3. [Tier 3: AI 시네마틱 무인 폴백]:
-   - 1~2단계 전원 탈락 시 기존 검증된 gemini-nano-banana-2.1 (src/renderer.py 연동) 안전 생성
-4. [Deduplication & Audit]:
-   - MD5 해시 중복 차단 및 asset_sourcing_report.md 자동 기록
+3. [Tier 3: Pexels 실사 스톡 사진]:
+   - Pexels Photo API 세로 고화질 스톡 사진 검색 및 1080x1920 스마트 중앙 크롭 (LANCZOS, 상단 30% 포커스)
+   - Gemini Vision 심사 통과 시 cut_XX_photo.jpg 저장 및 Photo ID 메타데이터 보존
+4. [Tier 4: Gemini Nano Banana 2.1 AI 폴백]:
+   - 1~3단계 전원 부재 시에만 최종 비상 안전망 가동 (src/renderer.py 연동)
+5. [Deduplication & Audit]:
+   - MD5 해시 중복 차단 및 asset_sourcing_report.md / json 전수 자동 기록
 """
 import os
 import sys
@@ -23,6 +26,7 @@ import re
 import time
 import hashlib
 import subprocess
+import shutil
 from io import BytesIO
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
@@ -55,6 +59,7 @@ class RobustNewsVisualEngine:
     def __init__(self):
         self.client = genai.Client(vertexai=True, project=config.GCP_PROJECT_ID, location=config.GCP_LOCATION)
         self.model_flash = getattr(config, "MODEL_FAST", "gemini-3.5-flash")
+        self.pexels_api_key = getattr(config, "PEXELS_API_KEY", None)
 
     def search_image_candidates(self, query: str) -> list[dict]:
         """Gemini AI + Google Search Grounding을 통한 공식 뉴스/보도사진 출처 수집 (순수 AI 검색)"""
@@ -80,36 +85,39 @@ class RobustNewsVisualEngine:
         except Exception as e:
             print(f"    [AI Grounding Search Warning] {e}", flush=True)
 
-        # AI가 찾아준 공식 출처 웹페이지에서 고화질 사진 파싱 (엄격한 잡음 필터링)
-        with httpx.Client(follow_redirects=True, timeout=7.0, verify=False, headers=HEADERS) as http_client:
-            for uri in article_uris[:5]:
-                try:
-                    r = http_client.get(uri)
-                    if r.status_code != 200:
-                        continue
-                    final_url = str(r.url)
-                    html = r.text
-
-                    # 1. og:image 메타 태그
-                    m = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html, re.I)
-                    if not m:
-                        m = re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', html, re.I)
-                    if m:
-                        og_u = urljoin(final_url, m.group(1))
-                        if not any(k in og_u.lower() for k in ["logo", "icon", "share", "banner", "facebook", "twitter", "default", "avatar"]):
-                            results.append({"direct_url": og_u, "referer": final_url})
-
-                    # 2. 본문 고화질 img 태그
-                    for img_m in re.finditer(r'<img[^>]+src=["\']([^"\']+\.(?:jpg|jpeg|png|webp)[^"\']*)["\']', html, re.I):
-                        src = img_m.group(1)
-                        if any(k in src.lower() for k in ["logo", "icon", "banner", "btn", "ad_", "pixel", "sp_", "spinner", "share", "sns", "default", "avatar"]):
+        # AI가 찾아준 공식 출처 웹페이지에서 고화질 사진 파싱 (엄격한 잡음 필터링 & 타임아웃 방어)
+        try:
+            with httpx.Client(follow_redirects=True, timeout=httpx.Timeout(3.0, connect=2.0), verify=False, headers=HEADERS) as http_client:
+                for uri in article_uris[:3]:
+                    try:
+                        r = http_client.get(uri)
+                        if r.status_code != 200:
                             continue
-                        full_u = urljoin(final_url, src)
-                        results.append({"direct_url": full_u, "referer": final_url})
-                        if len(results) >= 6:
-                            break
-                except Exception:
-                    continue
+                        final_url = str(r.url)
+                        html = r.text
+
+                        # 1. og:image 메타 태그
+                        m = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html, re.I)
+                        if not m:
+                            m = re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', html, re.I)
+                        if m:
+                            og_u = urljoin(final_url, m.group(1))
+                            if not any(k in og_u.lower() for k in ["logo", "icon", "share", "banner", "facebook", "twitter", "default", "avatar"]):
+                                results.append({"direct_url": og_u, "referer": final_url})
+
+                        # 2. 본문 고화질 img 태그
+                        for img_m in re.finditer(r'<img[^>]+src=["\']([^"\']+\.(?:jpg|jpeg|png|webp)[^"\']*)["\']', html, re.I):
+                            src = img_m.group(1)
+                            if any(k in src.lower() for k in ["logo", "icon", "banner", "btn", "ad_", "pixel", "sp_", "spinner", "share", "sns", "default", "avatar"]):
+                                continue
+                            full_u = urljoin(final_url, src)
+                            results.append({"direct_url": full_u, "referer": final_url})
+                            if len(results) >= 4:
+                                break
+                    except Exception:
+                        continue
+        except Exception:
+            pass
 
         return results
 
@@ -181,51 +189,46 @@ class RobustNewsVisualEngine:
                 os.remove(thumb_path)
             return False, str(e)
 
-    def extract_video_clip(self, query: str, out_mp4: str, timeout: int = 20) -> bool:
-        """yt-dlp로 5초 무음 1080x1920 세로 비디오 클립 추출 (02_star_image.py 레퍼런스 준수)"""
-        os.makedirs(os.path.dirname(os.path.abspath(out_mp4)), exist_ok=True)
-        search_cmd = [
-            sys.executable, "-m", "yt_dlp",
-            f"ytsearch1:{query}",
-            "--get-id",
-            "--no-warnings"
-        ]
-        try:
-            r = subprocess.run(search_cmd, capture_output=True, text=True, timeout=10)
-            v_ids = [line.strip() for line in r.stdout.strip().split("\n") if line.strip() and not line.startswith("ERROR")]
-            if not v_ids:
-                # 쿼리가 길어 실패 시 핵심 키워드 기반 재탐색
-                words = query.split()
-                short_q = f"{words[0]} {words[1] if len(words)>1 else ''} shorts".strip()
-                r = subprocess.run([sys.executable, "-m", "yt_dlp", f"ytsearch1:{short_q}", "--get-id", "--no-warnings"], capture_output=True, text=True, timeout=10)
-                v_ids = [line.strip() for line in r.stdout.strip().split("\n") if line.strip() and not line.startswith("ERROR")]
-            if not v_ids:
-                return False
-            v_id = v_ids[-1]
-        except Exception:
+    def extract_video_clip(self, query: str, out_mp4: str, timeout: int = 15) -> bool:
+        """Tier 1: Pexels Video API 기반 1080x1920 세로 FHD 직수령 & 5초 무음 mp4 인코딩"""
+        if not self.pexels_api_key:
             return False
-
-        yt_url = f"https://www.youtube.com/watch?v={v_id}"
+        os.makedirs(os.path.dirname(os.path.abspath(out_mp4)), exist_ok=True)
+        headers = {"Authorization": self.pexels_api_key}
+        params = {"query": query, "per_page": 5, "orientation": "portrait"}
         raw_clip = out_mp4.replace(".mp4", "_raw.mp4")
-        dl_cmd = [
-            sys.executable, "-m", "yt_dlp",
-            "-f", "bestvideo[ext=mp4][height<=1080]/best[ext=mp4]/best",
-            "--download-sections", "*00:02-00:07",
-            "--force-keyframes-at-cuts",
-            "-o", raw_clip,
-            yt_url
-        ]
         try:
-            subprocess.run(dl_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=timeout)
-            if not os.path.exists(raw_clip) or os.path.getsize(raw_clip) < 5000:
+            res = requests.get("https://api.pexels.com/videos/search", headers=headers, params=params, timeout=timeout)
+            if res.status_code != 200:
+                return False
+            videos = res.json().get("videos", [])
+            if not videos:
                 return False
 
-            # FFmpeg 1080x1920 세로 패딩 변환
+            v_url = None
+            for v in videos:
+                for vf in v.get("video_files", []):
+                    if vf.get("height", 0) > vf.get("width", 0) and vf.get("link"):
+                        v_url = vf["link"]
+                        break
+                if v_url:
+                    break
+            if not v_url and videos[0].get("video_files"):
+                v_url = videos[0]["video_files"][0].get("link")
+            if not v_url:
+                return False
+
+            vr = requests.get(v_url, timeout=timeout, stream=True)
+            if vr.status_code != 200:
+                return False
+            with open(raw_clip, "wb") as f:
+                for chunk in vr.iter_content(chunk_size=65536):
+                    f.write(chunk)
+
             conv_cmd = [
-                "ffmpeg", "-y", "-i", raw_clip,
-                "-vf", "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,setsar=1",
-                "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-an",
-                out_mp4
+                "ffmpeg", "-y", "-ss", "0", "-t", "5", "-i", raw_clip,
+                "-vf", "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1",
+                "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", out_mp4
             ]
             subprocess.run(conv_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             if os.path.exists(raw_clip):
@@ -235,6 +238,58 @@ class RobustNewsVisualEngine:
             if os.path.exists(raw_clip):
                 os.remove(raw_clip)
             return False
+
+    def search_pexels_photos(self, query: str, per_page: int = 5, timeout: int = 10) -> list[dict]:
+        """Tier 3: Pexels Photo API 세로(portrait) 사진 최대 per_page개 후보 수집"""
+        if not self.pexels_api_key:
+            return []
+        headers = {"Authorization": self.pexels_api_key}
+        params = {"query": query, "per_page": per_page, "orientation": "portrait"}
+        try:
+            res = requests.get("https://api.pexels.com/v1/search", headers=headers, params=params, timeout=timeout)
+            if res.status_code == 200:
+                return res.json().get("photos", [])
+        except Exception:
+            pass
+        return []
+
+    def download_and_crop_pexels_photo(self, photo: dict, out_jpg: str, timeout: int = 10) -> bool:
+        """Pexels 사진 다운로드 후 1080x1920 세로 스마트 중앙 크롭 (LANCZOS)"""
+        os.makedirs(os.path.dirname(os.path.abspath(out_jpg)), exist_ok=True)
+        p_url = photo.get("src", {}).get("large2x") or photo.get("src", {}).get("portrait") or photo.get("src", {}).get("original")
+        if not p_url:
+            return False
+        try:
+            pr = requests.get(p_url, timeout=timeout)
+            if pr.status_code != 200 or len(pr.content) < 5000:
+                return False
+
+            pil_img = Image.open(BytesIO(pr.content)).convert("RGB")
+            w, h = pil_img.size
+            target_ratio = 1080 / 1920
+            current_ratio = w / h
+
+            if current_ratio > target_ratio:
+                new_w = int(h * target_ratio)
+                left = (w - new_w) // 2
+                pil_img = pil_img.crop((left, 0, left + new_w, h))
+            else:
+                new_h = int(w / target_ratio)
+                top = max(0, int((h - new_h) * 0.3))
+                pil_img = pil_img.crop((0, top, w, top + new_h))
+
+            pil_img = pil_img.resize((1080, 1920), Image.Resampling.LANCZOS)
+            pil_img.save(out_jpg, "JPEG", quality=95)
+            return True
+        except Exception:
+            return False
+
+    def extract_pexels_photo(self, query: str, out_jpg: str, timeout: int = 10) -> tuple[bool, str]:
+        """Tier 3 하위호환 단일 다운로더"""
+        photos = self.search_pexels_photos(query, per_page=1, timeout=timeout)
+        if photos and self.download_and_crop_pexels_photo(photos[0], out_jpg, timeout=timeout):
+            return True, str(photos[0].get("id", ""))
+        return False, None
 
     def compose_9x16_card(self, img_bytes: bytes, out_path: str) -> bool:
         """9:16 가우시안 블러 배경(반경 35, 밝기 38%) + 중앙 960px 라운딩(r=28) 플로팅 카드 합성"""
@@ -277,7 +332,7 @@ class RobustNewsVisualEngine:
             return False
 
     def generate_ai_fallback(self, prompt: str, out_path: str) -> bool:
-        """Tier 3: gemini-nano-banana-2.1 단독 안전 생성 (src/renderer.py 연동)"""
+        """Tier 4: gemini-nano-banana-2.1 단독 안전 생성 (src/renderer.py 연동)"""
         os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
         try:
             generate_image(prompt, out_path, force_refresh=True)
@@ -288,7 +343,7 @@ class RobustNewsVisualEngine:
 
 
 def prepare_visual_assets(script_data: dict, topic_info: dict, output_dir: str, force_refresh: bool = False) -> list[dict]:
-    """10개 씬 전수에 대해 3-Tier 폭포수(비디오 -> AI실사 -> 나노바나나) 에셋 소싱"""
+    """10개 씬 전수에 대해 4-Tier 폭포수(비디오 -> 뉴스보도사진 -> 스톡사진 -> 나노바나나) 에셋 소싱"""
     temp_dir = os.path.join(output_dir, "temp")
     img_dir = os.path.join(temp_dir, "images")
     cand_dir = os.path.join(temp_dir, "candidates")
@@ -301,7 +356,7 @@ def prepare_visual_assets(script_data: dict, topic_info: dict, output_dir: str, 
     sections = script_data.get("sections", [])
 
     print("\n" + "=" * 80)
-    print(f"🎬 [Step 5-A Asset Sourcer] 3-Tier 폭포수 비주얼 에셋 소싱 가동")
+    print(f"🎬 [Step 5-A Asset Sourcer] 4-Tier 폭포수 비주얼 에셋 소싱 가동")
     print(f"    - 대상 주제: [{topic_info.get('press', '언론사')}] {topic_info.get('shorts_title', '')}")
     print(f"    - 총 씬 수: {len(sections)}개 씬")
     print("=" * 80)
@@ -318,6 +373,7 @@ def prepare_visual_assets(script_data: dict, topic_info: dict, output_dir: str, 
 
         out_card = os.path.join(img_dir, f"cut_{c_no:02d}_card.jpg")
         out_video = os.path.join(video_dir, f"cut_{c_no:02d}_video.mp4")
+        out_photo = os.path.join(img_dir, f"cut_{c_no:02d}_photo.jpg")
         out_ai = os.path.join(img_dir, f"cut_{c_no:02d}_ai.jpg")
 
         print(f"\n▶ [Scene {c_no:02d}/10] {sec.get('step_title', '')} | 자막: {sub}")
@@ -328,30 +384,28 @@ def prepare_visual_assets(script_data: dict, topic_info: dict, output_dir: str, 
         adopted_source = None
 
         # ----------------------------------------------------------------------
-        # [Tier 1] 대본에서 allow_video=True 로 승인된 씬만 비디오 최우선 탐색
+        # [Tier 1] 대본에서 allow_video=True 로 승인된 씬만 Pexels 비디오 최우선 탐색
         # ----------------------------------------------------------------------
         if sec.get("allow_video", False):
-            clean_sub = re.sub(r'<.*?>', '', sub).strip()
-            v_sq = re.sub(r'(?:보도사진|사진|그래픽|인포그래픽|연출)', '', sq).strip()
-            v_query = f"{kw} {v_sq} shorts".strip()
-            print(f"   [Tier 1 비디오 탐색] 유튜브 세로 클립: '{v_query}'")
-            if engine.extract_video_clip(v_query, out_video, timeout=20):
+            v_query = sec.get("stock_query_en") or re.sub(r'(?:보도사진|사진|그래픽|인포그래픽|연출)', '', sq).strip()
+            print(f"   [Tier 1 비디오 탐색] Pexels 세로 클립 (영문): '{v_query}'")
+            if engine.extract_video_clip(v_query, out_video, timeout=15):
                 v_pass, v_reason = engine.verify_video_with_vision(out_video, sec, topic_info)
                 if v_pass:
                     adopted_type = "video"
                     adopted_path = out_video
-                    adopted_desc = f"현장 비디오 클립 ({v_reason})"
-                    adopted_source = "Tier 1 (유튜브 클립)"
+                    adopted_desc = f"Pexels 세로 비디오 클립 ({v_reason})"
+                    adopted_source = "Tier 1 (Pexels 비디오)"
                     print(f"   ✓ [Tier 1 합격] 🎬 비디오 채택 ➔ {os.path.basename(out_video)} | {v_reason}")
                 else:
-                    print(f"   ❌ [Tier 1 탈락] 비디오 Vision 불합격 ({v_reason[:40]}...) ➔ Tier 2 전환")
+                    print(f"   ❌ [Tier 1 탈락] 비디오 Vision 불합격 ({v_reason[:40]}...) ➔ Tier 2/3 전환")
                     if os.path.exists(out_video):
                         os.remove(out_video)
 
         # ----------------------------------------------------------------------
-        # [Tier 2] AI 실사 보도사진 검색 (Gemini AI + Google Search Grounding)
+        # [Tier 2] 실제 보도사진 (require_news_photo 가 True이거나 팩트 사료 씬)
         # ----------------------------------------------------------------------
-        if not adopted_type:
+        if not adopted_type and sec.get("require_news_photo", False):
             print(f"   [Tier 2 탐색] AI 공식 보도사진 검색 (Google Grounding): '{sq}'")
             cands = engine.search_image_candidates(sq)
             print(f"   -> 수집된 공식 출처 후보 URL: {len(cands)}개. Vision Gate 순차 심사...")
@@ -361,7 +415,7 @@ def prepare_visual_assets(script_data: dict, topic_info: dict, output_dir: str, 
                 ref = c_info.get("referer", "https://www.google.com/")
                 try:
                     cand_file = os.path.join(cand_dir, f"cut_{c_no:02d}_cand_{c_idx}.jpg")
-                    r = requests.get(u, headers={"User-Agent": HEADERS["User-Agent"], "Referer": ref}, timeout=6)
+                    r = requests.get(u, headers={"User-Agent": HEADERS["User-Agent"], "Referer": ref}, timeout=4)
                     if r.status_code != 200 or len(r.content) < 8000:
                         continue
 
@@ -388,18 +442,58 @@ def prepare_visual_assets(script_data: dict, topic_info: dict, output_dir: str, 
                     continue
 
         # ----------------------------------------------------------------------
-        # [Tier 3] gemini-nano-banana-2.1 AI 실사 생성 (무인 무중단 안전망)
+        # [Tier 3] Pexels Photo API 고화질 실사 스톡 사진 (최대 5개 후보 순차 심사)
         # ----------------------------------------------------------------------
         if not adopted_type:
-            print(f"   ⚠ [Tier 1~2 탈락] 실사 부재 ➔ Tier 3 gemini-nano-banana-2.1 안전 생성")
+            stock_q = sec.get("stock_query_en") or re.sub(r'(?:보도사진|사진|그래픽|인포그래픽|연출)', '', sq).strip()
+            print(f"   [Tier 3 탐색] Pexels 고화질 스톡 사진 검색 (영문): '{stock_q}'")
+            photos = engine.search_pexels_photos(stock_q, per_page=5, timeout=10)
+            print(f"   -> 수집된 Pexels 스톡 후보: {len(photos)}개. Vision Gate 순차 심사...")
+
+            for p_idx, photo in enumerate(photos, 1):
+                photo_id = str(photo.get("id", ""))
+                cand_photo = os.path.join(cand_dir, f"cut_{c_no:02d}_pexels_cand_{p_idx}.jpg")
+                if not engine.download_and_crop_pexels_photo(photo, cand_photo, timeout=10):
+                    continue
+
+                try:
+                    with open(cand_photo, "rb") as sf:
+                        s_bytes = sf.read()
+                    h = hashlib.md5(s_bytes).hexdigest()
+                    if h in used_hashes:
+                        continue
+
+                    v_pass, v_reason = engine.verify_image_with_vision(s_bytes, sec, topic_info)
+                    if v_pass:
+                        shutil.copy2(cand_photo, out_photo)
+                        used_hashes.add(h)
+                        adopted_type = "card"
+                        adopted_path = out_photo
+                        adopted_desc = f"Pexels 세로 실사 사진 ({v_reason})"
+                        adopted_source = f"Tier 3 (Pexels Photo ID {photo_id})"
+                        print(f"   ✓ [Tier 3 합격] 📸 스톡 사진 후보 {p_idx} PASS ➔ {os.path.basename(out_photo)} | {v_reason}")
+                        break
+                    else:
+                        print(f"      스톡 후보 {p_idx} ❌ [Vision 탈락]: {v_reason[:45]}...")
+                except Exception:
+                    continue
+
+            if not adopted_type:
+                print(f"   ❌ [Tier 3 전원 탈락] Pexels 스톡 {len(photos)}개 후보 전원 불합격 ➔ Tier 4 전환")
+
+        # ----------------------------------------------------------------------
+        # [Tier 4] gemini-nano-banana-2.1 AI 실사 생성 (전원 부재 시에만 최종 안전망)
+        # ----------------------------------------------------------------------
+        if not adopted_type:
+            print(f"   ⚠ [Tier 1~3 탈락] 실사 부재 ➔ Tier 4 gemini-nano-banana-2.1 안전 생성")
             if engine.generate_ai_fallback(ai_prompt, out_ai):
                 h = hashlib.md5(open(out_ai, "rb").read()).hexdigest()
                 used_hashes.add(h)
                 adopted_type = "ai_art"
                 adopted_path = out_ai
                 adopted_desc = "9:16 AI 시네마틱 실사 일러스트"
-                adopted_source = "Tier 3 (Gemini Nano Banana 2.1)"
-                print(f"   ✓ [Tier 3 합격] 🎨 AI 일러스트 생성 ➔ {os.path.basename(out_ai)}")
+                adopted_source = "Tier 4 (Gemini Nano Banana AI 폴백)"
+                print(f"   ✓ [Tier 4 합격] 🎨 AI 일러스트 생성 ➔ {os.path.basename(out_ai)}")
             else:
                 Image.new("RGB", (1080, 1920), color=(20, 24, 30)).save(out_ai)
                 adopted_type = "ai_art"
@@ -426,7 +520,8 @@ def prepare_visual_assets(script_data: dict, topic_info: dict, output_dir: str, 
 
     report_md_path = os.path.join(output_dir, "asset_sourcing_report.md")
     video_cnt = sum(1 for a in final_assets if a["type"] == "video")
-    card_cnt = sum(1 for a in final_assets if a["type"] == "card")
+    card_cnt = sum(1 for a in final_assets if a["type"] == "card" and "Tier 2" in (a.get("source") or ""))
+    photo_cnt = sum(1 for a in final_assets if a["type"] == "card" and "Tier 3" in (a.get("source") or ""))
     ai_cnt = sum(1 for a in final_assets if a["type"] == "ai_art")
 
     lines = [
@@ -439,9 +534,10 @@ def prepare_visual_assets(script_data: dict, topic_info: dict, output_dir: str, 
         "---",
         "",
         "### 📊 종합 에셋 채택 통계",
-        f"- 🎬 **Tier 1 비디오 클립**: **{video_cnt}개 씬 ({video_cnt/len(final_assets)*100:.1f}%)**",
-        f"- 🖼️ **Tier 2 AI 실사 보도사진 카드**: **{card_cnt}개 씬 ({card_cnt/len(final_assets)*100:.1f}%)**",
-        f"- 🎨 **Tier 3 Gemini Nano Banana AI 폴백**: **{ai_cnt}개 씬 ({ai_cnt/len(final_assets)*100:.1f}%)**",
+        f"- 🎬 **Tier 1 Pexels 비디오 클립**: **{video_cnt}개 씬 ({video_cnt/len(final_assets)*100:.1f}%)**",
+        f"- 🖼️ **Tier 2 뉴스 실사 보도사진 카드**: **{card_cnt}개 씬 ({card_cnt/len(final_assets)*100:.1f}%)**",
+        f"- 📸 **Tier 3 Pexels 실사 스톡 사진**: **{photo_cnt}개 씬 ({photo_cnt/len(final_assets)*100:.1f}%)**",
+        f"- 🎨 **Tier 4 Gemini Nano Banana AI 폴백**: **{ai_cnt}개 씬 ({ai_cnt/len(final_assets)*100:.1f}%)**",
         "",
         "---",
         "",
@@ -452,7 +548,7 @@ def prepare_visual_assets(script_data: dict, topic_info: dict, output_dir: str, 
     ]
 
     for a in final_assets:
-        badge = "🎬 [비디오]" if a["type"] == "video" else ("🖼️ [실사카드]" if a["type"] == "card" else "🎨 [AI아트]")
+        badge = "🎬 [비디오]" if a["type"] == "video" else ("🖼️ [실사카드]" if "Tier 2" in (a.get("source") or "") else ("📸 [스톡사진]" if "Tier 3" in (a.get("source") or "") else "🎨 [AI폴백]"))
         fn = os.path.basename(a["path"])
         lines.append(f"| {a['cut_no']:02d} | {a['step_title']} | **{badge}** | `{fn}` | {a['desc']} | {a['source']} |")
 
@@ -461,106 +557,35 @@ def prepare_visual_assets(script_data: dict, topic_info: dict, output_dir: str, 
 
     print("\n" + "=" * 80)
     print(f"🎉 [에셋 소싱 완료] 전수 리포트 발행: {report_md_path}")
-    print(f"   -> 비디오 {video_cnt}개 / 실사카드 {card_cnt}개 / AI폴백 {ai_cnt}개")
+    print(f"   -> 비디오 {video_cnt}개 / 실사카드 {card_cnt}개 / 스톡사진 {photo_cnt}개 / AI폴백 {ai_cnt}개")
     print("=" * 80)
 
     return final_assets
 
 
-def run_cold_test():
-    """모듈별 단위 기능 정밀 콜드테스트 (더미가 아닌 실제 보도사진 및 비디오 실물 전수 검증)"""
-    print("\n" + "=" * 80)
-    print("🧊 [정밀 콜드테스트 시작] src/asset_sourcer.py 5대 핵심 모듈 실물 검증")
-    print("=" * 80)
-
-    engine = RobustNewsVisualEngine()
-    test_dir = "data/cold_test"
-    os.makedirs(test_dir, exist_ok=True)
-
-    sec_info = {"subtitle": "체중 감량 주사제", "core_keyword": "위고비", "step_title": "오프닝"}
-    topic_info = {"press": "이데일리", "selected_article_title": "“10kg 뺐지만 시력 잃었다”…오젬픽·위고비에 무슨 일이"}
-
-    # 1. AI Grounding 검색 및 실제 후보 다운로드
-    print("\n[테스트 1] AI Google Search Grounding 공식 보도사진 수집 및 고화질 필터링...")
-    cands = engine.search_image_candidates("위고비 비만치료제 오젬픽")
-    print(f"   결과: 수집된 원천 후보 URL {len(cands)}개")
-
-    real_photo_bytes = None
-    real_photo_url = None
-    for idx, c in enumerate(cands, 1):
-        u = c["direct_url"]
-        ref = c.get("referer", "https://www.google.com/")
-        try:
-            r = requests.get(u, headers={"User-Agent": HEADERS["User-Agent"], "Referer": ref}, timeout=6)
-            if r.status_code == 200 and len(r.content) >= 15000:
-                im = Image.open(BytesIO(r.content))
-                w, h = im.size
-                if w >= 300 and h >= 200 and (0.35 <= w/h <= 3.0):
-                    cand_save = os.path.join(test_dir, f"real_candidate_{idx}.jpg")
-                    with open(cand_save, "wb") as f:
-                        f.write(r.content)
-                    print(f"   ✓ [고화질 후보 확보 {idx}] {w}x{h} ({len(r.content)} bytes) ➔ {cand_save}")
-                    if real_photo_bytes is None:
-                        real_photo_bytes = r.content
-                        real_photo_url = u
-        except Exception:
-            continue
-
-    if not real_photo_bytes:
-        print("   ⚠️ 실사 사진 다운로드 실패 ➔ 비상 테스트 이미지 로드")
-
-    # 2. 실제 보도사진에 대한 Gemini Vision Gate 검증
-    print("\n[테스트 2] 수집된 실제 보도사진 Gemini Vision Gate 팩트 판정...")
-    if real_photo_bytes:
-        v_pass, v_reason = engine.verify_image_with_vision(real_photo_bytes, sec_info, topic_info)
-        print(f"   출처 URL: {real_photo_url}")
-        print(f"   결과: pass = {v_pass} | 판정 사유: {v_reason}")
-
-    # 3. 실제 보도사진으로 9:16 가우시안 블러 플로팅 카드 합성
-    print("\n[테스트 3] 실제 보도사진 기반 9:16 가우시안 블러 플로팅 카드 합성...")
-    card_path = os.path.join(test_dir, "test_card_real.jpg")
-    if real_photo_bytes:
-        c_ok = engine.compose_9x16_card(real_photo_bytes, card_path)
-        print(f"   결과: 카드 합성 성공 = {c_ok}")
-        if c_ok and os.path.exists(card_path):
-            card_im = Image.open(card_path)
-            print(f"   생성 파일: {card_path} ({os.path.getsize(card_path)} bytes, 규격: {card_im.size})")
-
-    # 4. 유튜브 5초 무음 비디오 클립 추출 및 비전 검증
-    print("\n[테스트 4] 유튜브 5초 세로 비디오 클립 추출 (yt-dlp) 및 Vision 검증...")
-    test_video = os.path.join(test_dir, "test_clip.mp4")
-    v_ok = engine.extract_video_clip("위고비 오젬픽 뉴스", test_video, timeout=20)
-    print(f"   결과: 비디오 추출 성공 = {v_ok}")
-    if v_ok and os.path.exists(test_video):
-        print(f"   생성 비디오: {test_video} ({os.path.getsize(test_video)} bytes)")
-        v_pass_vid, v_reason_vid = engine.verify_video_with_vision(test_video, sec_info, topic_info)
-        print(f"   비디오 프레임 Vision 판정: pass = {v_pass_vid} | 사유: {v_reason_vid}")
-
-    # 5. Tier 3 AI 이미지 생성 (gemini-nano-banana-2.1)
-    print("\n[테스트 5] Tier 3 gemini-nano-banana-2.1 AI 실사 생성 (src/renderer.py 연동)...")
-    ai_path = os.path.join(test_dir, "test_ai.jpg")
-    ai_ok = engine.generate_ai_fallback("A pharmaceutical vial of semaglutide weight loss medication with medical packaging", ai_path)
-    print(f"   결과: AI 생성 성공 = {ai_ok}")
-    if ai_ok and os.path.exists(ai_path):
-        print(f"   생성 이미지: {ai_path} ({os.path.getsize(ai_path)} bytes, 규격: {Image.open(ai_path).size})")
-
-    print("\n" + "=" * 80)
-    print("🧊 [콜드테스트 종료] 5대 모듈 전수 실물 생성 및 검증 완료")
-    print("=" * 80)
-
-
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--cold-test", action="store_true", help="단위 기능 콜드테스트 실행")
+    from datetime import datetime
+    if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    parser = argparse.ArgumentParser(description="Step 5-A: 4-Tier 비주얼 에셋 소싱 엔진")
+    parser.add_argument("--date", type=str, default=datetime.now().strftime("%Y-%m-%d"), help="실행 날짜 YYYY-MM-DD")
+    parser.add_argument("--force", action="store_true", help="기존 에셋 무시하고 강제 재소싱")
     args = parser.parse_args()
 
-    if args.cold_test:
-        run_cold_test()
+    clean_d = args.date.replace("-", "")
+    test_script_path = os.path.join(config.DATA_DIR, f"script_{clean_d}.json")
+    # topic_selection 파일이 날짜별 폴더 또는 data 폴더에 있는 것 모두 지원
+    test_topic_path = os.path.join(config.DATA_DIR, f"topic_selection_{clean_d}.json")
+    if not os.path.exists(test_topic_path):
+        test_topic_path = os.path.join(config.DATA_DIR, args.date, f"topic_selection_{clean_d}.json")
+    if not os.path.exists(test_script_path):
+        test_script_path = os.path.join(config.DATA_DIR, args.date, f"script_{clean_d}.json")
+
+    out_dir = os.path.join(config.DATA_DIR, args.date)
+    if os.path.exists(test_script_path) and os.path.exists(test_topic_path):
+        s_data = json.load(open(test_script_path, encoding="utf-8"))
+        t_data = json.load(open(test_topic_path, encoding="utf-8"))
+        prepare_visual_assets(s_data, t_data, out_dir, force_refresh=args.force)
     else:
-        test_script_path = os.path.join(config.DATA_DIR, "script_20261116.json")
-        test_topic_path = os.path.join(config.DATA_DIR, "topic_selection_20261116.json")
-        if os.path.exists(test_script_path) and os.path.exists(test_topic_path):
-            s_data = json.load(open(test_script_path, encoding="utf-8"))
-            t_data = json.load(open(test_topic_path, encoding="utf-8"))
-            prepare_visual_assets(s_data, t_data, "data/2026-11-16", force_refresh=True)
+        print(f"에셋 소싱 대상 파일 부재: {test_script_path} 또는 {test_topic_path}")
