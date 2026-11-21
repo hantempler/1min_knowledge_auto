@@ -603,46 +603,47 @@ def render_news_short(
     chosen_bgm = resolve_bgm_track(category=category, bgm_override=bgm_filename, date_str=target_date_str)
     bgm_path = get_bgm_path(chosen_bgm)
     
+    mixed_audio_path = os.path.join(temp_dir, "mixed_audio.m4a")
     if bgm_path and os.path.exists(bgm_path):
-        print(f"  🎵 [Step 5 Renderer] BGM 트랙 적용: {os.path.basename(bgm_path)} (주제: {category or '일반'}, 날짜: {target_date_str})", flush=True)
-        filter_complex = (
-            f"[0:v]fade=t=out:st={fade_start}:d=0.35[v];"
-            f"[2:a]aloop=loop=-1:size=2e+09,volume=0.08,atrim=0:{total_dur},"
-            f"afade=t=out:st={fade_start}:d=0.35[bgm];"
-            f"[1:a]adelay=80|80[vox];"
-            f"[vox][bgm]amix=inputs=2:duration=first:dropout_transition=2[a]"
+        print(f"  🎵 [Step 5 Renderer] BGM 트랙 적용 및 음량 평준화: {os.path.basename(bgm_path)} (주제: {category or '일반'}, 날짜: {target_date_str})", flush=True)
+        audio_filter = (
+            f"[1:a]aloop=loop=-1:size=2e+09,atrim=0:{total_dur},loudnorm=I=-28:TP=-2:LRA=7,afade=t=out:st={fade_start}:d=0.35[bgm];"
+            f"[0:a]adelay=80|80[vox];"
+            f"[vox][bgm]amix=inputs=2:duration=first:dropout_transition=0:weights=1 1,volume=2[a]"
         )
-        cmd_final = [
+        cmd_a = [
             "ffmpeg", "-y",
-            "-i", raw_video_ts,
             "-i", onetake_audio_path,
             "-i", bgm_path,
-            "-filter_complex", filter_complex,
-            "-map", "[v]",
+            "-filter_complex", audio_filter,
             "-map", "[a]",
-            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium",
             "-c:a", "aac", "-b:a", "192k",
-            "-movflags", "+faststart",
-            output_mp4
+            mixed_audio_path
         ]
+        subprocess.run(cmd_a, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
     else:
         print(f"  ℹ️ [Step 5 Renderer] BGM 음원 부재/제외 -> 나레이션 보이스 단독 렌더링 진행", flush=True)
-        filter_complex = (
-            f"[0:v]fade=t=out:st={fade_start}:d=0.35[v];"
-            f"[1:a]adelay=80|80,afade=t=out:st={fade_start}:d=0.35[a]"
-        )
-        cmd_final = [
+        cmd_a = [
             "ffmpeg", "-y",
-            "-i", raw_video_ts,
             "-i", onetake_audio_path,
-            "-filter_complex", filter_complex,
-            "-map", "[v]",
-            "-map", "[a]",
-            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium",
+            "-af", f"adelay=80|80,afade=t=out:st={fade_start}:d=0.35",
             "-c:a", "aac", "-b:a", "192k",
-            "-movflags", "+faststart",
-            output_mp4
+            mixed_audio_path
         ]
+        subprocess.run(cmd_a, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+
+    cmd_final = [
+        "ffmpeg", "-y",
+        "-i", raw_video_ts,
+        "-i", mixed_audio_path,
+        "-filter_complex", f"[0:v]format=yuv420p,fade=t=out:st={fade_start}:d=0.35[v]",
+        "-map", "[v]",
+        "-map", "1:a",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "faster",
+        "-c:a", "copy",
+        "-movflags", "+faststart",
+        output_mp4
+    ]
     subprocess.run(cmd_final, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
     # final_shorts.mp4 복사

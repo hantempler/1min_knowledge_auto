@@ -79,7 +79,8 @@ def validate_script_constraints(script_data: dict) -> bool:
 
     # 하이라이트 워드(<hl>) 퀄리티 검증: core_keyword 필드 존재 및 subtitle 속 <hl> 1:1 일치
     for idx, sec in enumerate(script_data["sections"]):
-        sub = sec.get("subtitle", "")
+        sub = sec.get("subtitle", "").strip()
+        narr = sec.get("narration", "").strip()
         core_kw = sec.get("core_keyword", "").strip()
         hls = re.findall(r'<hl>(.*?)</hl>', sub)
         if not hls:
@@ -98,6 +99,14 @@ def validate_script_constraints(script_data: dict) -> bool:
             return False
         if len(core_kw) < 2 or len(core_kw) > 10:
             print(f"  ❌ [핵심 키워드 길이 부적합] 씬 {idx+1} core_keyword('{core_kw}') 길이 {len(core_kw)}자 (허용: 2~10자)", flush=True)
+            return False
+
+        # 음성-자막 종결 어미 1:1 일치 검증 (문장 어미 드리프트 차단)
+        clean_sub = re.sub(r'<.*?>', '', sub).strip()
+        sub_last = re.sub(r'[^가-힣]', '', clean_sub.split()[-1]) if clean_sub.split() else ""
+        narr_last = re.sub(r'[^가-힣]', '', narr.split()[-1]) if narr.split() else ""
+        if sub_last and narr_last and sub_last != narr_last:
+            print(f"  ❌ [음성-자막 어미 불일치] 씬 {idx+1} 자막 어미('{sub_last}') vs 음성 어미('{narr_last}') 불일치", flush=True)
             return False
 
     return True
@@ -344,17 +353,29 @@ def generate_script(topic_info: dict, force_refresh: bool = False, output_dir: s
    - 특정 어미('~거든요', '~인데요', '~했답니다', '~하셨죠?' 등)의 기계적 남발 및 억지 질문형 톤을 전면 금지합니다.
    - 성인 시청자 타깃의 긴장감 있고 빠른 전달체('~라는 겁니다', '~한 셈이죠', '~벌어진 일입니다', '~주의하셔야 합니다' 등)로 문맥에 맞게 다채롭게 전개하십시오.
 
-5. 📐 자막 2줄 안전 규격 (22~35자) 및 시각 자막 vs 성우 낭독 1:1 분리:
-   - 각 씬은 반드시 생생한 '단 1문장'(공백 포함 22~34자, 최대 35자 절대 엄수 - 48pt 자막 2줄 고정).
-   - core_keyword (2~6자): 화면 중앙에 팝업될 가장 직관적이고 충격적인 단어 (일반 명사 배제).
-   - subtitle (시각 자막): 화면 노출용 48pt 자막 (22~34자). 숫자는 반드시 [아라비아 숫자 + 단위 기호](예: 1~2큰술, 5년, 5018억원, 2조원)로 표기하고, 핵심 키워드에만 <hl>core_keyword</hl> 태그 감싸기 (씬당 단 1개). mg/dL 등 복잡한 학술 단위는 가독성을 위해 간결하게 정돈하십시오.
-   - narration (성우 낭독 음성): TTS 성우 낭독용 문장 (22~34자). 기계음 오독을 방지하기 위해 위 subtitle의 숫자를 문맥에 맞는 [순수 한글 발음](예: 한두 큰술, 오 년, 오천십팔억 원, 이 조 원)으로 단위를 절대로 생략하지 말고 온전히 풀어서 작성. 어순과 다른 단어는 subtitle과 100% 동일하게 유지.
-   - anchor_word: 해당 씬 narration의 첫 단어 (2음절 이상 독립 단어).
-   - search_query: 해당 씬의 팩트 사료를 구글/빙에서 검색할 구체적 실사 쿼리 (예: "키빼몸 트위터 체중계 보도사진", "섭식장애 통계 그래프", "병원 진료비 영수증"). 감성적/추상적 단어 배제.
-   - stock_query_en: Pexels 등 글로벌 실사 스톡 사진 및 비디오 검색용 2~4단어 순수 영문 핵심 키워드 (예: "airport customs luggage", "prescription medicine pills", "overseas credit card payment", "police officer investigation"). 한국어 및 감성적 단어 절대 배제하고 구체적 시각 대상 영단어로만 작성.
-   - allow_video: 메시지 전달에 '피사체의 연속된 동작이나 현장 움직임'이 필수적인 씬인 경우 true (전체 대본 중 최대 2~3개 씬 이내로 엄격히 제한), 사료·보도자료·인물·장비·문서 등 '정지된 실사 사진'으로 명확한 정보와 신뢰감을 전달해야 하는 씬은 false.
-   - require_news_photo: 기사에서 다루는 특정 제품/약품 실물 패키지, 공문서, 특정 인물 등 '실제 언론 보도사진'이 반드시 필요한 팩트 씬이면 true, 일상 고민/연출 등 스톡 사진으로 충분한 씬이면 false.
-   - image_prompt: 9:16 vertical photorealistic cinematic documentary 영문 프롬프트 (CRITICAL: Absolutely NO text, NO words, NO letters).
+[★ 코어 키워드(core_keyword) 우선 도출 및 음성-자막 100% 일치 절대 규칙 ★]
+- core_keyword (★가장 중요★):
+  * 각 씬마다 시청자 뇌리에 0.1초 만에 꽂아야 할 [단 하나의 가장 결정적인 핵심 팩트 단어(2~6자, 순수 실질 명사)]를 먼저 도출하십시오.
+  * 화면 중앙에 거대하게 팝업되는 단어이므로, 그 단어 하나만 봐도 문장의 충격과 핵심 메시지가 0.1초 만에 이해되어야 합니다.
+  * ❌ 일반 명사/부사/동사/지시대명사/상투어 절대 금지: '고기', '제품', '구매', '일급', '사람', '우리', '행동', '경우', '모습', '지금 바로', '반드시', '주의', '확인해', '이것'
+  * ⭕ 진짜 핵심 대상 (기사 분야에 맞게 도출):
+    - 경제/금융: '선택약정', '25% 할인', '낙전 수입', '환급금 1조', '자동 연장', '퇴직연금', '임금피크제', 'DB형', 'DC형'
+    - 생활/교통: '두꺼운 패딩', '에어백 미작동', '튕겨 나감', '치명상 4배', '패딩 벗기'
+    - 과학/기술: '과충전 발열', '전극 손상', '수명 반토막', '85% 제한', '보호 모드'
+    - 안전/건강: '초록색 싹', '항산화 활성', '세포 손상', '5일간 발아', '밀폐 보관', '오젬픽', '눈 뇌졸중'
+- subtitle:
+  * 위에서 도출한 core_keyword를 반드시 그대로 포함해야 하며, 오직 그 단어에만 <hl>core_keyword</hl> 태그를 감싸십시오 (씬당 단 1개).
+  * 2줄(줄당 16~18자) 이내로 자연스럽게 읽히는 간결한 1문장 (22~34자, 최대 35자 절대 엄수).
+  * 숫자는 반드시 [아라비아 숫자 + 단위 기호](예: 1~2큰술, 5년, 5000만원, 2조원)로 표기.
+- narration:
+  * 성우 TTS 낭독용 문장. subtitle의 단어, 어순, 종결 어미와 100% 한 글자도 빠짐없이 완전히 일치해야 합니다! (어미 불일치 시 자동 탈락)
+  * 모든 숫자는 순수 한글 발음으로 풀어서 작성 (예: "이십오 퍼센트" -> subtitle은 "25%", "오천만 원" -> subtitle은 "5000만원", "디비형" -> subtitle은 "DB형", "사 배" -> subtitle은 "4배").
+- anchor_word: 해당 씬 narration 음성의 첫 핵심 단어 (반드시 2음절 이상 독립 명사/단어, '이', '그', '저' 등 외자 절대 금지).
+- search_query: 해당 씬의 팩트 사료를 구글/빙에서 검색할 구체적 실사 쿼리 (예: "키빼몸 트위터 체중계 보도사진", "섭식장애 통계 그래프", "병원 진료비 영수증"). 감성적/추상적 단어 배제.
+- stock_query_en: Pexels 등 글로벌 실사 스톡 사진 및 비디오 검색용 2~4단어 순수 영문 핵심 키워드 (예: "airport customs luggage", "prescription medicine pills", "overseas credit card payment", "police officer investigation"). 한국어 및 감성적 단어 절대 배제하고 구체적 시각 대상 영단어로만 작성.
+- allow_video: 메시지 전달에 '피사체의 연속된 동작이나 현장 움직임'이 필수적인 씬인 경우 true (전체 대본 중 최대 2~3개 씬 이내로 엄격히 제한), 사료·보도자료·인물·장비·문서 등 '정지된 실사 사진'으로 명확한 정보와 신뢰감을 전달해야 하는 씬은 false.
+- require_news_photo: 기사에서 다루는 특정 제품/약품 실물 패키지, 공문서, 특정 인물 등 '실제 언론 보도사진'이 반드시 필요한 팩트 씬이면 true, 일상 고민/연출 등 스톡 사진으로 충분한 씬이면 false.
+- image_prompt: 9:16 vertical photorealistic cinematic documentary 영문 프롬프트 (CRITICAL: Absolutely NO text, NO words, NO letters).
 
 반드시 순수 JSON 형식으로만 응답하세요:
 {{
@@ -370,13 +391,14 @@ def generate_script(topic_info: dict, force_refresh: bool = False, output_dir: s
   "sections": [
     {{
       "step_title": "01. 일상 공감 훅",
-      "core_keyword": "핵심단어",
+      "core_keyword": "핵심 팩트 실질 명사 단어 1개 (2~6자)",
+      "subtitle": "core_keyword에만 <hl>...</hl>를 감싼 1문장 (22~34자, 숫자/약어는 아라비아/영문 표기)",
+      "narration": "위 subtitle과 100% 동일하게 복사하되 숫자/약어만 한글 발음으로 치환한 1문장 (22~34자)",
       "anchor_word": "첫단어",
-      "narration": "0초 일상 공감 한글 낭독 단 1문장 (22~34자, ~하셨죠?)",
-      "subtitle": "core_keyword에만 <hl>...</hl>를 감싼 1문장 (22~34자)",
       "search_query": "실제 보도사진/영상 사료 검색용 구체적 팩트 쿼리",
       "stock_query_en": "airport customs luggage inspection",
       "allow_video": true,
+      "require_news_photo": false,
       "image_prompt": "Photorealistic 8k vertical 9:16 cinematic shot... CRITICAL: Absolutely NO text, NO words."
     }}
   ]

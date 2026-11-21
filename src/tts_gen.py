@@ -75,9 +75,8 @@ def generate_onetake_tts(text: str, out_wav_path: str, voice_name: str = "Puck",
     raise RuntimeError("TTS 원테이크 오디오 생성 실패")
 
 def align_scenes_whisper(audio_path: str, sections: list, out_json_path: str = None) -> list:
-    """faster-whisper로 원테이크 음성을 분석하여 씬별 지속시간(durations) 산출"""
-    from faster_whisper import WhisperModel
-    print("  🎧 [Step 4 Whisper] 원테이크 오디오 단어 칼싱크 분석 중...", flush=True)
+    """하이브리드 칼싱크 정렬: 오디오 묵음 구간(Silence Gap) 분석과 Whisper 단어 인식을 결합하여 씬별 지속시간(durations) 산출"""
+    print("  🎧 [Step 4 Audio Sync] 오디오 에너지 및 묵음 구간 정밀 칼싱크 분석 중...", flush=True)
 
     with wave.open(audio_path, 'rb') as wf:
         framerate = wf.getframerate()
@@ -85,51 +84,82 @@ def align_scenes_whisper(audio_path: str, sections: list, out_json_path: str = N
         frames = wf.readframes(wf.getnframes())
         audio_np = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
 
-    audio_16k = scipy.signal.resample(audio_np, int(len(audio_np) * 16000 / framerate))
-    model = WhisperModel('base', device='cpu', compute_type='int8')
-    segments, _ = model.transcribe(audio_16k, word_timestamps=True, language='ko')
-    words = [(w.word.strip(), w.start, w.end) for s in segments for w in s.words if w.word.strip()]
-
     num_sections = len(sections)
-    start_times = [0.0]
 
-    for sec_idx in range(1, num_sections):
-        sec = sections[sec_idx]
-        kw = sec.get("anchor_word", sec.get("keyword", "")).strip()
-        narr = sec.get("narration", "")
-        # 후보 단어 리스트: 앵커 단어 및 씬 나레이션 앞부분 3단어 (2글자 이상)
-        narr_tokens = [re.sub(r'[^\w]', '', w) for w in narr.split() if len(re.sub(r'[^\w]', '', w)) >= 2]
-        cands = []
-        if kw and len(re.sub(r'[^\w]', '', kw)) >= 2:
-            cands.append(re.sub(r'[^\w]', '', kw))
-        cands.extend(narr_tokens[:3])
+    # 40ms 단위 RMS 에너지 계산으로 문장 간 자연스러운 무음 구간(Silence Gap) 탐색
+    hop_sec = 0.04
+    hop_len = int(framerate * hop_sec)
+    n_hops = len(audio_np) // hop_len
+    rms = np.array([np.sqrt(np.mean(audio_np[i*hop_len:(i+1)*hop_len]**2)) for i in range(n_hops)])
 
-        min_allowed_time = start_times[-1] + 2.0
-        found_t = None
+    thresh = max(0.012, np.mean(rms) * 0.12)
+    min_sil_hops = int(0.20 / hop_sec)
+    gaps = []
+    in_sil = False
+    start_h = 0
 
-        for w, st, et in words:
-            if st >= min_allowed_time:
-                clean_w = re.sub(r'[^\w]', '', w)
-                if not clean_w:
-                    continue
-                matched = False
-                for c in cands:
-                    if c == clean_w or (len(c) >= 2 and len(clean_w) >= 2 and (clean_w.startswith(c) or c.startswith(clean_w))):
-                        matched = True
+    for h in range(len(rms)):
+        if rms[h] < thresh:
+            if not in_sil:
+                in_sil = True
+                start_h = h
+        else:
+            if in_sil:
+                in_sil = False
+                sil_hops = h - start_h
+                if sil_hops >= min_sil_hops:
+                    t_st = start_h * hop_sec
+                    t_et = h * hop_sec
+                    if t_st > 1.2 and t_et < total_audio_dur - 0.8:
+                        gaps.append((t_st, t_et, (t_st + t_et) / 2.0))
+
+    expected_cuts = num_sections - 1
+
+    if len(gaps) == expected_cuts:
+        cut_points = [g[2] for g in gaps]
+    else:
+        # 갭 개수가 다를 경우 Whisper 단어/세그먼트 정밀 분석 결합
+        from faster_whisper import WhisperModel
+        audio_16k = scipy.signal.resample(audio_np, int(len(audio_np) * 16000 / framerate))
+        model = WhisperModel('base', device='cpu', compute_type='int8')
+        segments, _ = model.transcribe(audio_16k, word_timestamps=True, language='ko')
+        seg_list = list(segments)
+
+        if len(seg_list) == num_sections:
+            cut_points = []
+            for i in range(num_sections - 1):
+                p_end = seg_list[i].end
+                n_start = seg_list[i+1].start
+                matched_gap = None
+                for gst, get, gmid in gaps:
+                    if gst >= p_end - 0.2 and get <= n_start + 0.2:
+                        matched_gap = gmid
                         break
-                if matched:
-                    found_t = st
-                    break
+                if matched_gap:
+                    cut_points.append(matched_gap)
+                else:
+                    cut_points.append((p_end + n_start) / 2.0 if n_start > p_end else n_start)
+        else:
+            expected_intervals = [total_audio_dur * (i / num_sections) for i in range(1, num_sections)]
+            cut_points = []
+            used_gap_indices = set()
+            for exp_t in expected_intervals:
+                best_idx = None
+                min_dist = 9999.0
+                for gi, (st, et, mid) in enumerate(gaps):
+                    if gi not in used_gap_indices:
+                        dist = abs(mid - exp_t)
+                        if dist < min_dist:
+                            min_dist = dist
+                            best_idx = gi
+                if best_idx is not None and min_dist < 2.5:
+                    used_gap_indices.add(best_idx)
+                    cut_points.append(gaps[best_idx][2])
+                else:
+                    cut_points.append(exp_t)
+            cut_points.sort()
 
-        if found_t is None or found_t <= start_times[-1]:
-            remaining_sections = num_sections - sec_idx
-            remaining_time = max(total_audio_dur - start_times[-1], remaining_sections * 2.5)
-            found_t = start_times[-1] + (remaining_time / (remaining_sections + 1))
-
-        start_times.append(round(found_t, 2))
-
-    start_times.append(round(total_audio_dur, 2))
-
+    start_times = [0.0] + [round(c, 2) for c in cut_points] + [round(total_audio_dur, 2)]
     durations = []
     for i in range(num_sections):
         dur = float(round(start_times[i+1] - start_times[i], 2))
